@@ -94,20 +94,22 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
   ]);
 
   // Compute stock value from stock_batches
-  const stockValue = (stockBatchesResult.data || []).reduce((sum, batch) => {
+  const stockValue = (stockBatchesResult.data || []).reduce((sum: number, batch: any) => {
     const qty = Number(batch.quantity_remaining);
-    const cost = Number(batch.cost_price ?? (Array.isArray(batch.product) ? batch.product[0]?.cost_price : batch.product?.cost_price) ?? 0);
+    const productData = Array.isArray(batch.product) ? batch.product[0] : batch.product;
+    const productCost = Number(productData?.cost_price || 0);
+    const cost = Number(batch.cost_price ?? productCost);
     return sum + qty * cost;
   }, 0);
 
   const todaySalesData = todaySalesResult.data || [];
-  const todaySalesTotal = todaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
+  const todaySalesTotal = todaySalesData.reduce((sum: number, s: any) => sum + Number(s.total), 0);
   const todaySalesCount = todaySalesData.length;
 
   const totalSalesData = totalSalesResult.data || [];
-  const totalSales = totalSalesData.reduce((sum, s) => sum + Number(s.total), 0);
+  const totalSales = totalSalesData.reduce((sum: number, s: any) => sum + Number(s.total), 0);
 
-  const creditOutstanding = creditOutstandingResult.data?.reduce((sum, c) => sum + Number(c.credit_balance), 0) || 0;
+  const creditOutstanding = creditOutstandingResult.data?.reduce((sum: number, c: any) => sum + Number(c.credit_balance), 0) || 0;
   const creditCustomersCount = creditOutstandingResult.data?.length || 0;
 
   const returnsTodayCount = returnsTodayResult.data?.length || 0;
@@ -117,15 +119,15 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
 
   // Low stock computation: products where total stock < reorder_level
   const productsList = lowStockResult.data || [];
-  const stockQuantities = await Promise.all(productsList.map(async (p) => {
+  const stockQuantities = await Promise.all(productsList.map(async (p: any) => {
     const { data } = await supabase
       .from('stock_batches')
       .select('quantity_remaining')
       .eq('product_id', p.id);
-    const totalQty = data?.reduce((sum, b) => sum + Number(b.quantity_remaining), 0) || 0;
+    const totalQty = data?.reduce((sum: number, b: any) => sum + Number(b.quantity_remaining), 0) || 0;
     return { ...p, total_qty: totalQty };
   }));
-  const lowStockItems = stockQuantities.filter((p) => p.total_qty < Number(p.reorder_level));
+  const lowStockItems = stockQuantities.filter((p: any) => p.total_qty < Number(p.reorder_level));
   const lowStockCount = lowStockItems.length;
 
   const expiringSoonCount = expiringSoonResult.data?.length || 0;
@@ -233,21 +235,21 @@ export const getCashierDashboard = async (req: Request, res: Response) => {
       .order('credit_balance', { ascending: false }),
   ]);
 
-  const myTodaySales = myTodaySalesResult.data?.reduce((sum, s) => sum + Number(s.total), 0) || 0;
+  const myTodaySales = myTodaySalesResult.data?.reduce((sum: number, s: any) => sum + Number(s.total), 0) || 0;
   const myTodayCount = myTodaySalesResult.data?.length || 0;
-  const myTotalSales = myTotalSalesResult.data?.reduce((sum, s) => sum + Number(s.total), 0) || 0;
+  const myTotalSales = myTotalSalesResult.data?.reduce((sum: number, s: any) => sum + Number(s.total), 0) || 0;
   const myTotalCount = myTotalSalesResult.data?.length || 0;
 
   // Available products: count distinct products and total units
   const productSet = new Set();
   let totalUnits = 0;
-  for (const batch of availableProductsResult.data || []) {
+  for (const batch of (availableProductsResult.data || [])) {
     productSet.add(batch.product_id);
     totalUnits += Number(batch.quantity_remaining);
   }
   const availableProductsCount = productSet.size;
 
-  const outstandingDebt = outstandingDebtResult.data?.reduce((sum, c) => sum + Number(c.credit_balance), 0) || 0;
+  const outstandingDebt = outstandingDebtResult.data?.reduce((sum: number, c: any) => sum + Number(c.credit_balance), 0) || 0;
   const outstandingCustomersCount = outstandingDebtResult.data?.length || 0;
 
   res.json({
