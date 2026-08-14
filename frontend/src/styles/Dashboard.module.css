@@ -17,3 +17,10 @@
   margin-bottom: var(--space-4);
   color: var(--text-primary);
 }
+.quickLinks {
+  margin-top: var(--space-8);
+}
+.quickLinks h2 {
+  font-size: var(--font-size-xl);
+  margin-bottom: var(--space-4);
+}
