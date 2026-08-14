@@ -17,6 +17,8 @@ import creditRoutes from './routes/credit.routes';
 import purchaseRoutes from './routes/purchase.routes';
 import supplierRoutes from './routes/supplier.routes';
 import reportRoutes from './routes/report.routes';
+import customerRoutes from './routes/customer.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 
 const app: Application = express();
 
@@ -38,6 +40,8 @@ app.use('/api/credit', creditRoutes);
 app.use('/api/purchases', purchaseRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health check
 app.get('/', (req: Request, res: Response) => {
