@@ -4,7 +4,8 @@ import { AppError } from '../utils/errorHandler';
 
 // Daily sales report
 export const dailySalesReport = async (req: Request, res: Response) => {
-  const { start_date, end_date } = req.query as any;
+  const start_date = String(req.query.start_date || '');
+  const end_date = String(req.query.end_date || '');
   if (!start_date || !end_date) throw new AppError('start_date and end_date are required', 400);
 
   const { data, error } = await supabase
@@ -21,7 +22,8 @@ export const dailySalesReport = async (req: Request, res: Response) => {
 
   if (error) throw new AppError('Failed to fetch sales', 500);
 
-  // Summarize
+  const sales = (data || []) as any[];
+
   let totalSales = 0;
   let totalDiscount = 0;
   let totalTax = 0;
@@ -29,7 +31,7 @@ export const dailySalesReport = async (req: Request, res: Response) => {
   const salesByPaymentMethod: any = {};
   const productCounts: any = {};
 
-  data.forEach((sale: any) => {
+  sales.forEach((sale: any) => {
     totalSales += Number(sale.total);
     totalDiscount += Number(sale.discount);
     totalTax += Number(sale.tax);
@@ -45,8 +47,10 @@ export const dailySalesReport = async (req: Request, res: Response) => {
     if (sale.sale_items) {
       sale.sale_items.forEach((item: any) => {
         const pid = item.product_id;
+        const productObj = Array.isArray(item.product) ? item.product[0] : item.product;
+        const productName = productObj?.name || 'Unknown';
         if (!productCounts[pid]) {
-          productCounts[pid] = { name: item.product?.name, quantity: 0, revenue: 0 };
+          productCounts[pid] = { name: productName, quantity: 0, revenue: 0 };
         }
         productCounts[pid].quantity += Number(item.quantity);
         productCounts[pid].revenue += Number(item.total);
@@ -59,19 +63,21 @@ export const dailySalesReport = async (req: Request, res: Response) => {
       total_sales: totalSales,
       total_discount: totalDiscount,
       total_tax: totalTax,
-      total_transactions: data.length,
+      total_transactions: sales.length,
       total_items: totalItems,
     },
     sales_by_payment_method: salesByPaymentMethod,
     product_breakdown: productCounts,
-    sales: data,
+    sales,
   });
 };
 
-// Monthly sales summary (last 12 months)
+// Monthly sales summary (12 months of given year)
 export const monthlySalesReport = async (req: Request, res: Response) => {
-  const { year } = req.query;
-  const currentYear = year ? parseInt(year) : new Date().getFullYear();
+  const yearParam = req.query.year;
+  const currentYear = yearParam ? parseInt(String(yearParam)) : new Date().getFullYear();
+  if (isNaN(currentYear)) throw new AppError('Invalid year', 400);
+
   const startDate = `${currentYear}-01-01`;
   const endDate = `${currentYear}-12-31`;
 
@@ -83,12 +89,14 @@ export const monthlySalesReport = async (req: Request, res: Response) => {
 
   if (error) throw new AppError('Failed to fetch sales', 500);
 
+  const sales = (data || []) as any[];
+
   const monthlyData: any = {};
   for (let i = 1; i <= 12; i++) {
     monthlyData[i] = { month: i, total: 0, count: 0 };
   }
 
-  data.forEach((sale: any) => {
+  sales.forEach((sale: any) => {
     const month = new Date(sale.sale_date).getMonth() + 1;
     monthlyData[month].total += Number(sale.total);
     monthlyData[month].count += 1;
@@ -108,12 +116,14 @@ export const stockValuationReport = async (req: Request, res: Response) => {
 
   if (error) throw new AppError('Failed to fetch stock', 500);
 
+  const productList = (products || []) as any[];
+
   let totalCostValue = 0;
   let totalSellingValue = 0;
-  const productValuation = products.map((product: any) => {
+  const productValuation = productList.map((product: any) => {
     let totalQty = 0;
     let costValue = 0;
-    product.stock_batches.forEach((batch: any) => {
+    (product.stock_batches || []).forEach((batch: any) => {
       const qty = Number(batch.quantity_remaining);
       totalQty += qty;
       costValue += qty * Number(batch.cost_price || product.cost_price);
@@ -140,10 +150,10 @@ export const stockValuationReport = async (req: Request, res: Response) => {
 
 // Profit report (approximate, based on cost vs selling)
 export const profitReport = async (req: Request, res: Response) => {
-  const { start_date, end_date } = req.query as any;
+  const start_date = String(req.query.start_date || '');
+  const end_date = String(req.query.end_date || '');
   if (!start_date || !end_date) throw new AppError('start_date and end_date are required', 400);
 
-  // Get sales items within period
   const { data: saleItems, error } = await supabase
     .from('sale_items')
     .select(`
@@ -156,19 +166,28 @@ export const profitReport = async (req: Request, res: Response) => {
 
   if (error) throw new AppError('Failed to fetch sales items', 500);
 
+  const items = (saleItems || []) as any[];
+
   let totalRevenue = 0;
   let totalCost = 0;
   const productProfit: any = {};
 
-  saleItems.forEach((item: any) => {
+  items.forEach((item: any) => {
     const revenue = Number(item.total);
-    const cost = Number(item.quantity) * Number(item.product.cost_price);
+    const productObj = Array.isArray(item.product) ? item.product[0] : item.product;
+    const productCost = Number(productObj?.cost_price || 0);
+    const cost = Number(item.quantity) * productCost;
     totalRevenue += revenue;
     totalCost += cost;
 
     const pid = item.product_id;
     if (!productProfit[pid]) {
-      productProfit[pid] = { name: item.product.name, revenue: 0, cost: 0, profit: 0 };
+      productProfit[pid] = {
+        name: productObj?.name || 'Unknown',
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+      };
     }
     productProfit[pid].revenue += revenue;
     productProfit[pid].cost += cost;
@@ -186,8 +205,12 @@ export const profitReport = async (req: Request, res: Response) => {
 
 // Top selling products
 export const topSellingProducts = async (req: Request, res: Response) => {
-  const { start_date, end_date, limit = 10 } = req.query as any;
-  const limitNum = parseInt(limit) || 10;
+  const limitParam = req.query.limit;
+  const limitNum = limitParam ? parseInt(String(limitParam)) : 10;
+  if (isNaN(limitNum) || limitNum <= 0) throw new AppError('Invalid limit', 400);
+
+  const start_date = String(req.query.start_date || '1900-01-01');
+  const end_date = String(req.query.end_date || '2100-01-01');
 
   const { data, error } = await supabase
     .from('sale_items')
@@ -197,19 +220,27 @@ export const topSellingProducts = async (req: Request, res: Response) => {
       quantity,
       total
     `)
-    .gte('sale.sale_date', start_date || '1900-01-01')
-    .lte('sale.sale_date', end_date || '2100-01-01')
+    .gte('sale.sale_date', start_date)
+    .lte('sale.sale_date', end_date)
     .order('total', { ascending: false })
     .limit(limitNum);
 
   if (error) throw new AppError('Failed to fetch top products', 500);
 
-  // Aggregate by product
+  const items = (data || []) as any[];
+
   const aggregated: any = {};
-  data.forEach((item: any) => {
+  items.forEach((item: any) => {
     const pid = item.product_id;
+    const productObj = Array.isArray(item.product) ? item.product[0] : item.product;
     if (!aggregated[pid]) {
-      aggregated[pid] = { product_id: pid, name: item.product?.name, unit: item.product?.unit, total_quantity: 0, total_revenue: 0 };
+      aggregated[pid] = {
+        product_id: pid,
+        name: productObj?.name || 'Unknown',
+        unit: productObj?.unit || '',
+        total_quantity: 0,
+        total_revenue: 0,
+      };
     }
     aggregated[pid].total_quantity += Number(item.quantity);
     aggregated[pid].total_revenue += Number(item.total);
