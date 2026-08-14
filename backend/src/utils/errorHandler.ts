@@ -5,7 +5,6 @@ export class AppError extends Error {
   constructor(message: string, statusCode: number) {
     super(message);
     this.statusCode = statusCode;
-    Error.captureStackTrace(this, this.constructor);
   }
 }
 
@@ -29,7 +28,10 @@ export const errorHandler = (
     message = 'Unauthorized';
   }
 
-  console.error(`[ERROR] ${err.stack}`);
+  console.error(`[ERROR] ${err.message}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(err.stack);
+  }
 
   res.status(statusCode).json({
     error: message,
