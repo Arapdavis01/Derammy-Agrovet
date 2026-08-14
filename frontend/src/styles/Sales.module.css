@@ -1,0 +1,85 @@
+.filters {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  background: var(--bg-card);
+  padding: var(--space-4);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--box-shadow-sm);
+  margin-bottom: var(--space-4);
+}
+
+.filters .input,
+.filters select {
+  flex: 1;
+  min-width: 130px;
+}
+
+.status {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.completed {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.held {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.voided {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.refunded {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-4);
+}
+
+.modal {
+  background: white;
+  padding: var(--space-6);
+  border-radius: var(--border-radius-lg);
+  width: 100%;
+  max-width: 700px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal h3 {
+  margin-bottom: var(--space-4);
+}
+
+.modal h4 {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.modal p {
+  margin-bottom: var(--space-1);
+}
+
+.modal .btn {
+  margin-top: var(--space-4);
+  margin-right: var(--space-2);
+}
