@@ -14,7 +14,7 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
 
   // Run all queries in parallel
   const [
-    stockValueResult,
+    stockBatchesResult,
     todaySalesResult,
     totalSalesResult,
     creditOutstandingResult,
@@ -27,8 +27,11 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
     creditCustomersResult,
     topProductsTodayResult,
   ] = await Promise.all([
-    // Stock value
-    supabase.rpc('get_stock_value'), // we'll create this RPC later
+    // Stock batches with cost price for stock value calculation
+    supabase
+      .from('stock_batches')
+      .select('quantity_remaining, cost_price, product:products(cost_price)')
+      .gt('quantity_remaining', 0),
     // Today's sales
     supabase
       .from('sales')
@@ -58,7 +61,7 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
     supabase
       .from('products')
       .select('id', { count: 'exact', head: true }),
-    // Low stock (we'll compute manually if RPC not available)
+    // Low stock: fetch products with reorder level
     supabase
       .from('products')
       .select('id, name, reorder_level'),
@@ -90,8 +93,13 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
       .lt('sale.sale_date', tomorrowISO),
   ]);
 
-  // Process results
-  const stockValue = stockValueResult.data?.total_stock_value || 0;
+  // Compute stock value from stock_batches
+  const stockValue = (stockBatchesResult.data || []).reduce((sum, batch) => {
+    const qty = Number(batch.quantity_remaining);
+    const cost = Number(batch.cost_price ?? (Array.isArray(batch.product) ? batch.product[0]?.cost_price : batch.product?.cost_price) ?? 0);
+    return sum + qty * cost;
+  }, 0);
+
   const todaySalesData = todaySalesResult.data || [];
   const todaySalesTotal = todaySalesData.reduce((sum, s) => sum + Number(s.total), 0);
   const todaySalesCount = todaySalesData.length;
@@ -124,12 +132,14 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
 
   // Cashier performance: aggregate today and total per user
   const cashierMap = new Map();
-  for (const sale of cashierPerformanceResult.data || []) {
+  for (const sale of (cashierPerformanceResult.data || [])) {
     const userId = sale.user_id;
     if (!cashierMap.has(userId)) {
+      // Handle if user relation is an array (should not be, but safe)
+      const userObj = Array.isArray(sale.user) ? sale.user[0] : sale.user;
       cashierMap.set(userId, {
         user_id: userId,
-        full_name: sale.user?.full_name || 'Unknown',
+        full_name: userObj?.full_name || 'Unknown',
         today_sales: 0,
         today_count: 0,
         total_sales: 0,
@@ -151,10 +161,11 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
 
   // Top products today
   const productMap = new Map();
-  for (const item of topProductsTodayResult.data || []) {
+  for (const item of (topProductsTodayResult.data || [])) {
     const pid = item.product_id;
     if (!productMap.has(pid)) {
-      productMap.set(pid, { product_id: pid, name: item.product?.name, quantity: 0, revenue: 0 });
+      const productObj = Array.isArray(item.product) ? item.product[0] : item.product;
+      productMap.set(pid, { product_id: pid, name: productObj?.name || 'Unknown', quantity: 0, revenue: 0 });
     }
     const entry = productMap.get(pid);
     entry.quantity += Number(item.quantity);
