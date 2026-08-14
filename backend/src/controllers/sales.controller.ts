@@ -2,13 +2,11 @@ import { Request, Response } from 'express';
 import { supabase } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 import { reduceStock, addStock } from '../services/stock.service';
-import { v4 as uuidv4 } from 'uuid';
 
 // Generate invoice number: INV-YYYYMMDD-XXXX
 const generateInvoiceNo = async (): Promise<string> => {
   const date = new Date();
   const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-  // Count sales today for sequence
   const { count, error } = await supabase
     .from('sales')
     .select('id', { count: 'exact', head: true })
@@ -27,19 +25,18 @@ export const createSale = async (req: Request, res: Response) => {
     items, // [{ product_id, quantity, unit_price?, discount?, batch_id? }]
     payment_method, // 'cash', 'mpesa', 'credit', 'mixed'
     payments, // for mixed: [{ method, amount, reference? }]
-    discount = 0, // total discount
+    discount = 0,
     tax = 0,
     sale_status = 'completed',
-  } = req.body;
+  } = req.body as any;
 
   const userId = (req as any).user.id;
 
   if (!items || items.length === 0) throw new AppError('No items provided', 400);
   if (!payment_method) throw new AppError('Payment method required', 400);
 
-  // Start building sale
   let subtotal = 0;
-  const saleItemsData = [];
+  const saleItemsData: any[] = [];
 
   // Validate each item, calculate line totals
   for (const item of items) {
@@ -48,7 +45,6 @@ export const createSale = async (req: Request, res: Response) => {
       throw new AppError('Invalid item data', 400);
     }
 
-    // Fetch product to get current selling price (if unit_price not provided)
     let price = unit_price;
     if (!price) {
       const { data: product } = await supabase
@@ -72,11 +68,9 @@ export const createSale = async (req: Request, res: Response) => {
     });
   }
 
-  // Apply total discount and tax
-  const totalAfterDiscount = subtotal - discount;
-  const total = totalAfterDiscount + tax;
+  const totalAfterDiscount = subtotal - Number(discount);
+  const total = totalAfterDiscount + Number(tax);
 
-  // Validate payment(s)
   let totalPaid = 0;
   let paymentStatus = 'paid';
   let amountPaid = 0;
@@ -92,35 +86,35 @@ export const createSale = async (req: Request, res: Response) => {
     }
     amountPaid = total;
   } else if (payment_method === 'credit') {
-    // Credit sale: no immediate payment, customer required
     if (!customer_id) throw new AppError('Credit sale requires a customer', 400);
     paymentStatus = 'credit';
     amountPaid = 0;
   } else if (payment_method === 'cash' || payment_method === 'mpesa') {
-    // Single payment: amount_paid is provided if cash (to calculate change), for mpesa assume exact
     if (payment_method === 'cash' && req.body.amount_received) {
       amountPaid = Number(req.body.amount_received);
       if (amountPaid < total) throw new AppError('Insufficient cash received', 400);
       changeDue = amountPaid - total;
     } else {
-      amountPaid = total; // Assume exact for mpesa or cash without change
+      amountPaid = total;
     }
   } else {
     throw new AppError('Invalid payment method', 400);
   }
 
-  // If credit sale, check customer credit limit
-  if (payment_method === 'credit' || payment_method === 'mixed') {
-    if (customer_id) {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('credit_limit, credit_balance')
-        .eq('id', customer_id)
-        .single();
-      if (!customer) throw new AppError('Customer not found', 404);
-      if (Number(customer.credit_balance) + total > Number(customer.credit_limit)) {
-        throw new AppError('Customer credit limit exceeded', 400);
-      }
+  // Check customer credit limit for credit or mixed payments with credit component
+  if (payment_method === 'credit' || (payment_method === 'mixed' && payments.some((p: any) => p.method === 'credit'))) {
+    if (!customer_id) throw new AppError('Customer required for credit transactions', 400);
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('credit_limit, credit_balance')
+      .eq('id', customer_id)
+      .single();
+    if (!customer) throw new AppError('Customer not found', 404);
+    const creditAmount = total - (payment_method === 'mixed'
+      ? payments.filter((p: any) => p.method === 'credit').reduce((sum: number, p: any) => sum + Number(p.amount), 0)
+      : 0);
+    if (Number(customer.credit_balance) + creditAmount > Number(customer.credit_limit)) {
+      throw new AppError('Customer credit limit exceeded', 400);
     }
   }
 
@@ -151,7 +145,6 @@ export const createSale = async (req: Request, res: Response) => {
 
   // Insert sale items and reduce stock
   for (const item of saleItemsData) {
-    // Insert sale item
     const { error: itemError } = await supabase
       .from('sale_items')
       .insert({
@@ -165,16 +158,13 @@ export const createSale = async (req: Request, res: Response) => {
       });
 
     if (itemError) {
-      // Rollback sale and any already inserted items? For simplicity, we'll attempt to void sale.
       await supabase.from('sales').delete().eq('id', sale.id);
       throw new AppError('Failed to insert sale items', 500);
     }
 
-    // Reduce stock
     try {
       await reduceStock(item.product_id, item.quantity, item.batch_id, userId, sale.id);
     } catch (e: any) {
-      // If stock reduction fails, we should rollback sale and sale items
       await supabase.from('sales').delete().eq('id', sale.id);
       throw e;
     }
@@ -188,11 +178,10 @@ export const createSale = async (req: Request, res: Response) => {
         customer_id: customer_id || null,
         amount: p.amount,
         payment_method: p.method,
-        reference: p.reference,
+        reference: p.reference || null,
       });
     }
   } else if (payment_method !== 'credit') {
-    // Record single payment
     await supabase.from('payments').insert({
       sale_id: sale.id,
       customer_id: customer_id || null,
@@ -202,17 +191,21 @@ export const createSale = async (req: Request, res: Response) => {
     });
   }
 
-  // If credit sale or mixed with credit component, update customer balance
-  if (payment_status === 'credit' || (payment_method === 'mixed' && payments.some((p: any) => p.method === 'credit'))) {
-    const creditAmount = total - (payments && payments.length ? payments.filter((p: any) => p.method === 'credit').reduce((sum: number, p: any) => sum + p.amount, 0) : total);
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('credit_balance')
-      .eq('id', customer_id)
-      .single();
-    if (customer) {
-      const newBalance = Number(customer.credit_balance) + creditAmount;
-      await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', customer_id);
+  // Update customer credit balance if credit sale or mixed with credit component
+  if (paymentStatus === 'credit' || (payment_method === 'mixed' && payments.some((p: any) => p.method === 'credit'))) {
+    const creditAmount = payment_method === 'mixed'
+      ? payments.filter((p: any) => p.method === 'credit').reduce((sum: number, p: any) => sum + Number(p.amount), 0)
+      : total;
+    if (customer_id) {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('credit_balance')
+        .eq('id', customer_id)
+        .single();
+      if (customer) {
+        const newBalance = Number(customer.credit_balance) + creditAmount;
+        await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', customer_id);
+      }
     }
   }
 
@@ -238,9 +231,19 @@ export const createSale = async (req: Request, res: Response) => {
 
 // List sales with filters
 export const listSales = async (req: Request, res: Response) => {
-  const { start_date, end_date, user_id, customer_id, payment_method, sale_status, page = 1, limit = 50 } = req.query as any;
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
+  const {
+    start_date,
+    end_date,
+    user_id,
+    customer_id,
+    payment_method,
+    sale_status,
+    page = '1',
+    limit = '50',
+  } = req.query as any;
+
+  const pageNum = parseInt(String(page));
+  const limitNum = parseInt(String(limit));
   const offset = (pageNum - 1) * limitNum;
 
   let query = supabase
@@ -263,7 +266,13 @@ export const listSales = async (req: Request, res: Response) => {
   const { data, error, count } = await query;
 
   if (error) throw new AppError('Failed to fetch sales', 500);
-  res.json({ data, total: count || 0, page: pageNum, limit: limitNum, totalPages: Math.ceil((count || 0) / limitNum) });
+  res.json({
+    data,
+    total: count || 0,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: Math.ceil((count || 0) / limitNum),
+  });
 };
 
 // Get sale details
@@ -292,10 +301,8 @@ export const getSale = async (req: Request, res: Response) => {
 // Void sale
 export const voidSale = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { reason } = req.body;
   const userId = (req as any).user.id;
 
-  // Fetch sale
   const { data: sale, error: fetchError } = await supabase
     .from('sales')
     .select('*')
@@ -327,10 +334,10 @@ export const voidSale = async (req: Request, res: Response) => {
     }
   }
 
-  // Reverse credit if credit sale
+  // Reverse credit if credit sale or mixed with credit component
   if (sale.payment_status === 'credit' || sale.payment_method === 'mixed') {
     if (sale.customer_id) {
-      const creditAmount = sale.total - sale.amount_paid; // amount unpaid
+      const creditAmount = sale.total - sale.amount_paid;
       const { data: customer } = await supabase
         .from('customers')
         .select('credit_balance')
@@ -343,7 +350,6 @@ export const voidSale = async (req: Request, res: Response) => {
     }
   }
 
-  // Update sale status
   const { error: updateError } = await supabase
     .from('sales')
     .update({ sale_status: 'voided' })
