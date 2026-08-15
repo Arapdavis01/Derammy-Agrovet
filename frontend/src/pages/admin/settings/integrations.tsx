@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
@@ -20,13 +20,15 @@ export default function AdminIntegrations() {
   });
   const [saving, setSaving] = useState(false);
 
-  useState(() => {
-    // We could load saved settings from localStorage for demo
-    const saved = localStorage.getItem('mpesa_config');
-    if (saved) {
-      setMpesaConfig(JSON.parse(saved));
+  // Load saved settings from localStorage after component mounts (client-side only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('mpesa_config');
+      if (saved) {
+        setMpesaConfig(JSON.parse(saved));
+      }
     }
-  });
+  }, []);
 
   const handleChange = (field: string, value: any) => {
     setMpesaConfig((prev) => ({ ...prev, [field]: value }));
@@ -35,7 +37,9 @@ export default function AdminIntegrations() {
   const handleSave = async () => {
     setSaving(true);
     // Simulate saving; in production you would POST to /api/integrations/mpesa
-    localStorage.setItem('mpesa_config', JSON.stringify(mpesaConfig));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mpesa_config', JSON.stringify(mpesaConfig));
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
     setSaving(false);
     toast.success('M-Pesa settings saved (demo)');
