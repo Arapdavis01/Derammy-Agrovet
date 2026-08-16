@@ -287,7 +287,48 @@ label {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
+/* Dashboard Card */
+.dashboard-card {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
 
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow-md);
+}
+
+.dashboard-card-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.dashboard-card-content {
+  flex: 1;
+}
+
+.dashboard-card-title {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+  font-weight: 500;
+}
+
+.dashboard-card-value {
+  font-size: var(--font-size-2xl);
+  font-weight: bold;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.dashboard-card-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--gray-600);
+  margin-top: var(--space-1);
+}
 /* ---------- Alerts ---------- */
 .alert {
   padding: var(--space-3);
