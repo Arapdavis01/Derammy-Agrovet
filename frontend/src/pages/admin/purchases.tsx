@@ -1,16 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Purchases.module.css';
 
 interface Supplier {
   id: string;
   name: string;
-  phone: string;
-  address: string;
+  phone?: string;
+  address?: string;
 }
 
 interface Product {
@@ -18,11 +17,12 @@ interface Product {
   name: string;
   unit: string;
   cost_price: number;
+  selling_price: number;
   track_batch_expiry: boolean;
 }
 
 interface PurchaseItem {
-  product_id: string;
+  product: Product;
   quantity: number;
   cost_price: number;
   batch_number?: string;
@@ -35,37 +35,33 @@ interface Purchase {
   purchase_date: string;
   total: number;
   status: string;
-  supplier: { id: string; name: string };
-  user: { id: string; full_name: string };
+  supplier: { id: string; name: string } | null;
 }
 
 export default function AdminPurchases() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'purchases' | 'suppliers'>('purchases');
-  
-  // Purchases list state
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [totalPurchases, setTotalPurchases] = useState(0);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(20);
-  const [purchasesLoading, setPurchasesLoading] = useState(false);
 
-  // Create purchase state
-  const [showCreatePurchase, setShowCreatePurchase] = useState(false);
+  // Create PO states
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
+  const [notes, setNotes] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
+  const [overallDiscount, setOverallDiscount] = useState(0);
   const [creating, setCreating] = useState(false);
 
-  // Suppliers management state
-  const [supplierList, setSupplierList] = useState<Supplier[]>([]);
-  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  // Supplier modal states
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', address: '' });
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+
+  // History states
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('');
+  const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -77,68 +73,41 @@ export default function AdminPurchases() {
       return;
     }
     fetchInitialData();
-  }, [user, activeTab]);
+  }, [user]);
 
   const fetchInitialData = async () => {
-    if (activeTab === 'purchases') {
-      fetchPurchases();
-    } else {
-      fetchSuppliers();
-    }
-    // Always fetch suppliers and products for create form
-    fetchSuppliersForDropdown();
-    fetchAllProducts();
-  };
-
-  const fetchPurchases = async (pageNum = page) => {
-    setPurchasesLoading(true);
-    try {
-      const res = await api.get('/purchases', { params: { page: pageNum, limit } });
-      setPurchases(res.data.data);
-      setTotalPurchases(res.data.total);
-      setPage(res.data.page);
-    } catch (error: any) {
-      toast.error('Failed to fetch purchases');
-    } finally {
-      setPurchasesLoading(false);
-    }
+    await Promise.all([fetchSuppliers(), fetchHistory()]);
   };
 
   const fetchSuppliers = async () => {
     try {
       const res = await api.get('/suppliers');
-      setSupplierList(res.data);
-    } catch (error: any) {
+      setSuppliers(res.data);
+    } catch (error) {
       toast.error('Failed to fetch suppliers');
     }
   };
 
-  const fetchSuppliersForDropdown = async () => {
+  const fetchHistory = async () => {
+    setLoadingHistory(true);
     try {
-      const res = await api.get('/suppliers');
-      setSuppliers(res.data);
-    } catch (error: any) {
-      // silent
-    }
-  };
-
-  const fetchAllProducts = async () => {
-    try {
-      const res = await api.get('/products', { params: { limit: 100 } });
-      setProducts(res.data.data);
-    } catch (error: any) {
-      // silent
+      const res = await api.get('/purchases', { params: { limit: 200 } });
+      setPurchases(res.data.data || []);
+    } catch (error) {
+      toast.error('Failed to fetch purchase history');
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
   const handleProductSearch = async (term: string) => {
     setProductSearch(term);
-    if (term.trim().length > 0) {
+    if (term.trim().length > 0 && selectedSupplier) {
       try {
         const res = await api.get('/products', { params: { search: term, limit: 10 } });
         setSearchResults(res.data.data);
-      } catch (error: any) {
-        // ignore
+      } catch (error) {
+        toast.error('Failed to search products');
       }
     } else {
       setSearchResults([]);
@@ -146,342 +115,396 @@ export default function AdminPurchases() {
   };
 
   const addPurchaseItem = (product: Product) => {
-    // Check if already in list
-    const existing = purchaseItems.find((item) => item.product_id === product.id);
-    if (existing) {
+    if (purchaseItems.some((item) => item.product.id === product.id)) {
       toast.error('Product already added');
       return;
     }
     setPurchaseItems([
       ...purchaseItems,
-      {
-        product_id: product.id,
-        quantity: 1,
-        cost_price: product.cost_price,
-      },
+      { product, quantity: 1, cost_price: product.cost_price },
     ]);
     setProductSearch('');
     setSearchResults([]);
   };
 
-  const updatePurchaseItem = (productId: string, field: string, value: any) => {
+  const updateItem = (productId: string, field: string, value: any) => {
     setPurchaseItems((prev) =>
       prev.map((item) =>
-        item.product_id === productId ? { ...item, [field]: value } : item
+        item.product.id === productId ? { ...item, [field]: value } : item
       )
     );
   };
 
-  const removePurchaseItem = (productId: string) => {
-    setPurchaseItems(purchaseItems.filter((item) => item.product_id !== productId));
+  const removeItem = (productId: string) => {
+    setPurchaseItems(purchaseItems.filter((item) => item.product.id !== productId));
   };
 
-  const calculateTotal = () => {
-    return purchaseItems.reduce((sum, item) => sum + item.quantity * item.cost_price, 0);
-  };
+  // Calculations
+  const subtotal = purchaseItems.reduce((sum, item) => sum + item.quantity * item.cost_price, 0);
+  const totalBuy = subtotal - overallDiscount;
+  const expectedRevenue = purchaseItems.reduce(
+    (sum, item) => sum + item.quantity * item.product.selling_price,
+    0
+  );
+  const expectedProfit = expectedRevenue - totalBuy;
 
-  const submitPurchase = async () => {
+  const submitPurchaseOrder = async () => {
     if (!selectedSupplier) {
-      toast.error('Select a supplier');
+      toast.error('Please select a supplier');
       return;
     }
     if (purchaseItems.length === 0) {
-      toast.error('Add at least one item');
+      toast.error('Add at least one product');
       return;
     }
     setCreating(true);
     try {
+      const items = purchaseItems.map((item) => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        cost_price: item.cost_price,
+        batch_number: item.batch_number,
+        expiry_date: item.expiry_date,
+      }));
+
       await api.post('/purchases', {
         supplier_id: selectedSupplier,
-        items: purchaseItems,
+        items,
         status: 'received',
       });
-      toast.success('Purchase recorded successfully');
-      setShowCreatePurchase(false);
-      setSelectedSupplier('');
+
+      toast.success('Purchase order submitted');
+      // Reset form
       setPurchaseItems([]);
-      fetchPurchases();
+      setSelectedSupplier('');
+      setNotes('');
+      setOverallDiscount(0);
+      fetchHistory();
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to create purchase');
+      toast.error(error.response?.data?.error || 'Failed to submit purchase order');
     } finally {
       setCreating(false);
     }
   };
 
-  // Supplier CRUD
-  const openSupplierForm = (supplier?: Supplier) => {
-    if (supplier) {
-      setEditingSupplier(supplier);
-      setSupplierForm({ name: supplier.name, phone: supplier.phone || '', address: supplier.address || '' });
-    } else {
-      setEditingSupplier(null);
-      setSupplierForm({ name: '', phone: '', address: '' });
-    }
-    setShowSupplierForm(true);
-  };
+  // Supplier modal handlers
+  const openSupplierModal = () => setShowSupplierModal(true);
+  const closeSupplierModal = () => setShowSupplierModal(false);
 
-  const submitSupplierForm = async () => {
+  const submitSupplier = async () => {
     if (!supplierForm.name.trim()) {
-      toast.error('Supplier name is required');
+      toast.error('Supplier name required');
       return;
     }
     try {
-      if (editingSupplier) {
-        await api.put(`/suppliers/${editingSupplier.id}`, supplierForm);
-        toast.success('Supplier updated');
-      } else {
-        await api.post('/suppliers', supplierForm);
-        toast.success('Supplier created');
+      await api.post('/suppliers', supplierForm);
+      toast.success('Supplier created');
+      setSupplierForm({ name: '', phone: '', address: '' });
+      closeSupplierModal();
+      fetchSuppliers();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to create supplier');
+    }
+  };
+
+  // Grouping logic
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter((p) => {
+      const supplierName = p.supplier?.name || '';
+      const matchesSearch =
+        supplierName.toLowerCase().includes(historySearch.toLowerCase()) ||
+        p.id.toLowerCase().includes(historySearch.toLowerCase());
+      const matchesStatus = historyStatus ? p.status === historyStatus : true;
+      return matchesSearch && matchesStatus;
+    });
+  }, [purchases, historySearch, historyStatus]);
+
+  const groupedBySupplier = useMemo(() => {
+    const map = new Map<string, { supplier: Supplier; orders: Purchase[] }>();
+    filteredPurchases.forEach((p) => {
+      const sid = p.supplier_id;
+      if (!map.has(sid)) {
+        map.set(sid, { supplier: p.supplier || { id: sid, name: 'Unknown' }, orders: [] });
       }
-      setShowSupplierForm(false);
-      fetchSuppliers();
-      fetchSuppliersForDropdown();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to save supplier');
-    }
-  };
+      map.get(sid)!.orders.push(p);
+    });
+    return Array.from(map.values());
+  }, [filteredPurchases]);
 
-  const deleteSupplier = async (id: string) => {
-    if (!confirm('Delete this supplier?')) return;
-    try {
-      await api.delete(`/suppliers/${id}`);
-      toast.success('Supplier deleted');
-      fetchSuppliers();
-      fetchSuppliersForDropdown();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to delete supplier');
-    }
-  };
-
-  const totalPages = Math.ceil(totalPurchases / limit);
+  const totalHistory = filteredPurchases.reduce((sum, p) => sum + Number(p.total), 0);
 
   return (
     <Layout>
-      <div className="flex justify-between items-center mb-4">
-        <h1>Purchases & Suppliers</h1>
-        <button className="btn btn-primary" onClick={() => setShowCreatePurchase(true)}>
-          New Purchase
-        </button>
-      </div>
+      {/* Create Purchase Order Section */}
+      <div className="card">
+        <h2 className="card-title"><i className="fas fa-cart-plus" style={{ marginRight: '8px' }}></i>Create Purchase Order</h2>
 
-      <div className={styles.tabs}>
-        <button
-          className={`${styles.tab} ${activeTab === 'purchases' ? styles.active : ''}`}
-          onClick={() => setActiveTab('purchases')}
-        >
-          Purchases
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'suppliers' ? styles.active : ''}`}
-          onClick={() => setActiveTab('suppliers')}
-        >
-          Suppliers
-        </button>
-      </div>
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div>
+            <label>Supplier *</label>
+            <select
+              value={selectedSupplier}
+              onChange={(e) => {
+                setSelectedSupplier(e.target.value);
+                setSearchResults([]);
+                setProductSearch('');
+              }}
+              className="input"
+            >
+              <option value="">Select Supplier...</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Notes</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="input"
+              placeholder="Order notes..."
+            />
+          </div>
+        </div>
 
-      {activeTab === 'purchases' && (
-        <>
+        <div className="flex items-center gap-2 mt-2">
+          <button className="btn btn-outline btn-sm" onClick={openSupplierModal}>
+            <i className="fas fa-plus" style={{ marginRight: '4px' }}></i> New Supplier
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <label>Select Products</label>
+          <input
+            type="text"
+            value={productSearch}
+            onChange={(e) => handleProductSearch(e.target.value)}
+            className="input"
+            placeholder={selectedSupplier ? 'Search Products' : 'Select supplier first, then search products...'}
+            disabled={!selectedSupplier}
+          />
+          {searchResults.length > 0 && (
+            <div className="pos-search-results">
+              {searchResults.map((product) => (
+                <div key={product.id} className="pos-search-item" onClick={() => addPurchaseItem(product)}>
+                  <div className="pos-product-info">
+                    <span className="pos-product-name">{product.name}</span>
+                    <span className="pos-product-stock">
+                      Buy: KES {product.cost_price}/{product.unit} | Sell: KES {product.selling_price}/{product.unit}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Items table */}
+        {purchaseItems.length > 0 ? (
           <table className="table mt-4">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Supplier</th>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Buy Price</th>
+                <th>Batch Number</th>
+                <th>Expiry Date</th>
                 <th>Total</th>
-                <th>Status</th>
-                <th>Recorded By</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {purchases.map((purchase) => (
-                <tr key={purchase.id}>
-                  <td>{new Date(purchase.purchase_date).toLocaleString()}</td>
-                  <td>{purchase.supplier?.name || '-'}</td>
-                  <td>KES {purchase.total.toLocaleString()}</td>
-                  <td>{purchase.status}</td>
-                  <td>{purchase.user?.full_name || '-'}</td>
-                </tr>
-              ))}
-              {purchases.length === 0 && (
-                <tr><td colSpan={5} className="text-center">No purchases found</td></tr>
-              )}
-            </tbody>
-          </table>
-          {totalPages > 1 && (
-            <div className="flex justify-between mt-4">
-              <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => fetchPurchases(page - 1)}>Previous</button>
-              <span>Page {page} of {totalPages}</span>
-              <button className="btn btn-outline btn-sm" disabled={page >= totalPages} onClick={() => fetchPurchases(page + 1)}>Next</button>
-            </div>
-          )}
-        </>
-      )}
-
-      {activeTab === 'suppliers' && (
-        <>
-          <div className="flex justify-end mb-4">
-            <button className="btn btn-outline" onClick={() => openSupplierForm()}>Add Supplier</button>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Address</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {supplierList.map((supplier) => (
-                <tr key={supplier.id}>
-                  <td>{supplier.name}</td>
-                  <td>{supplier.phone || '-'}</td>
-                  <td>{supplier.address || '-'}</td>
+              {purchaseItems.map((item) => (
+                <tr key={item.product.id}>
+                  <td>{item.product.name}</td>
                   <td>
-                    <button className="btn btn-sm btn-outline" onClick={() => openSupplierForm(supplier)}>Edit</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => deleteSupplier(supplier.id)}>Delete</button>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(item.product.id, 'quantity', parseFloat(e.target.value) || 0)}
+                      className="input"
+                      style={{ width: '80px' }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.cost_price}
+                      onChange={(e) => updateItem(item.product.id, 'cost_price', parseFloat(e.target.value) || 0)}
+                      className="input"
+                      style={{ width: '100px' }}
+                    />
+                  </td>
+                  <td>
+                    {item.product.track_batch_expiry ? (
+                      <input
+                        type="text"
+                        value={item.batch_number || ''}
+                        onChange={(e) => updateItem(item.product.id, 'batch_number', e.target.value)}
+                        className="input"
+                        style={{ width: '120px' }}
+                      />
+                    ) : '-'}
+                  </td>
+                  <td>
+                    {item.product.track_batch_expiry ? (
+                      <input
+                        type="date"
+                        value={item.expiry_date || ''}
+                        onChange={(e) => updateItem(item.product.id, 'expiry_date', e.target.value)}
+                        className="input"
+                        style={{ width: '140px' }}
+                      />
+                    ) : '-'}
+                  </td>
+                  <td>KES {(item.quantity * item.cost_price).toFixed(2)}</td>
+                  <td>
+                    <button className="btn btn-sm btn-danger" onClick={() => removeItem(item.product.id)}>
+                      <i className="fas fa-times"></i>
+                    </button>
                   </td>
                 </tr>
               ))}
-              {supplierList.length === 0 && (
-                <tr><td colSpan={4} className="text-center">No suppliers found</td></tr>
-              )}
             </tbody>
           </table>
-        </>
-      )}
+        ) : (
+          <p className="alert alert-info mt-4">No items added yet.</p>
+        )}
 
-      {/* Create Purchase Modal */}
-      {showCreatePurchase && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modalLarge}>
-            <h3>New Purchase</h3>
-            <div className="flex flex-col gap-2">
-              <label>Supplier</label>
-              <select
-                value={selectedSupplier}
-                onChange={(e) => setSelectedSupplier(e.target.value)}
-                className="input"
-              >
-                <option value="">Select supplier</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-
-              <label>Search Product</label>
-              <input
-                type="text"
-                value={productSearch}
-                onChange={(e) => handleProductSearch(e.target.value)}
-                className="input"
-                placeholder="Type to search..."
-              />
-              {searchResults.length > 0 && (
-                <div className={styles.searchResults}>
-                  {searchResults.map((product) => (
-                    <div key={product.id} className={styles.searchItem} onClick={() => addPurchaseItem(product)}>
-                      <span>{product.name}</span>
-                      <span>KES {product.cost_price}/{product.unit}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Purchase items table */}
-            {purchaseItems.length > 0 && (
-              <table className="table mt-4">
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th>Quantity</th>
-                    <th>Cost Price</th>
-                    <th>Batch Number</th>
-                    <th>Expiry Date</th>
-                    <th>Total</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchaseItems.map((item) => {
-                    const product = products.find(p => p.id === item.product_id);
-                    return (
-                      <tr key={item.product_id}>
-                        <td>{product?.name || item.product_id}</td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0.1"
-                            step="0.1"
-                            value={item.quantity}
-                            onChange={(e) => updatePurchaseItem(item.product_id, 'quantity', parseFloat(e.target.value) || 0)}
-                            className="input"
-                            style={{ width: '80px' }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.cost_price}
-                            onChange={(e) => updatePurchaseItem(item.product_id, 'cost_price', parseFloat(e.target.value) || 0)}
-                            className="input"
-                            style={{ width: '100px' }}
-                          />
-                        </td>
-                        <td>
-                          {product?.track_batch_expiry ? (
-                            <input
-                              type="text"
-                              value={item.batch_number || ''}
-                              onChange={(e) => updatePurchaseItem(item.product_id, 'batch_number', e.target.value)}
-                              className="input"
-                              style={{ width: '120px' }}
-                            />
-                          ) : '-'}
-                        </td>
-                        <td>
-                          {product?.track_batch_expiry ? (
-                            <input
-                              type="date"
-                              value={item.expiry_date || ''}
-                              onChange={(e) => updatePurchaseItem(item.product_id, 'expiry_date', e.target.value)}
-                              className="input"
-                              style={{ width: '140px' }}
-                            />
-                          ) : '-'}
-                        </td>
-                        <td>KES {(item.quantity * item.cost_price).toFixed(2)}</td>
-                        <td>
-                          <button className="btn btn-sm btn-danger" onClick={() => removePurchaseItem(item.product_id)}>✕</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-
-            <div className="mt-4">
-              <p><strong>Total: KES {calculateTotal().toFixed(2)}</strong></p>
-            </div>
-
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitPurchase} disabled={creating}>
-                {creating ? 'Processing...' : 'Submit Purchase'}
-              </button>
-              <button className="btn btn-outline" onClick={() => setShowCreatePurchase(false)}>Cancel</button>
-            </div>
+        {/* Totals */}
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div>
+            <label>Overall Discount (KES)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={overallDiscount}
+              onChange={(e) => setOverallDiscount(parseFloat(e.target.value) || 0)}
+              className="input"
+            />
           </div>
         </div>
-      )}
 
-      {/* Supplier Form Modal */}
-      {showSupplierForm && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h3>{editingSupplier ? 'Edit Supplier' : 'Add Supplier'}</h3>
+        <div className="pos-totals mt-4">
+          <p>Subtotal (before discounts): KES {subtotal.toFixed(2)}</p>
+          <p>Overall Discount: -KES {overallDiscount.toFixed(2)}</p>
+          <p className="pos-grand-total">TOTAL (Buy): KES {totalBuy.toFixed(2)}</p>
+          <p>Expected Revenue: KES {expectedRevenue.toFixed(2)}</p>
+          <p>Expected Profit: KES {expectedProfit.toFixed(2)}</p>
+        </div>
+
+        <button className="btn btn-primary mt-4" onClick={submitPurchaseOrder} disabled={creating}>
+          {creating ? (
+            <>
+              <i className="fas fa-spinner fa-spin" style={{ marginRight: '6px' }}></i> Submitting...
+            </>
+          ) : (
+            <>
+              <i className="fas fa-check-circle" style={{ marginRight: '6px' }}></i> Submit Purchase Order
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Purchase Orders History */}
+      <div className="dashboard-section">
+        <h2><i className="fas fa-history" style={{ marginRight: '8px' }}></i>Purchase Orders History</h2>
+
+        <div className="filters">
+          <input
+            type="text"
+            placeholder="Search by supplier, PO number, or date..."
+            value={historySearch}
+            onChange={(e) => setHistorySearch(e.target.value)}
+            className="input"
+          />
+          <select
+            value={historyStatus}
+            onChange={(e) => setHistoryStatus(e.target.value)}
+            className="input"
+          >
+            <option value="">All Status</option>
+            <option value="received">Received</option>
+            <option value="pending">Pending</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button className="btn btn-outline" onClick={fetchHistory}>
+            <i className="fas fa-refresh" style={{ marginRight: '4px' }}></i> Refresh
+          </button>
+        </div>
+
+        <p className="mt-2">
+          Total: KES {totalHistory.toFixed(2)} | Suppliers: {groupedBySupplier.length} | POs: {filteredPurchases.length}
+        </p>
+
+        {loadingHistory ? (
+          <p>Loading history...</p>
+        ) : (
+          <div className="mt-4">
+            {groupedBySupplier.map((group) => (
+              <div key={group.supplier.id} className="card mb-2">
+                <div
+                  className="flex justify-between items-center cursor-pointer"
+                  onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}
+                >
+                  <div>
+                    <strong>{group.supplier.name}</strong>
+                    <p className="text-muted">
+                      {group.orders.length} orders | {group.orders.reduce((sum, o) => sum + 1, 0)} items | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
+                    <i className={`fas fa-chevron-${expandedSupplier === group.supplier.id ? 'up' : 'down'}`}></i>
+                  </div>
+                </div>
+                {expandedSupplier === group.supplier.id && (
+                  <div className="mt-2">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>PO ID</th>
+                          <th>Date</th>
+                          <th>Total</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.orders.map((order) => (
+                          <tr key={order.id}>
+                            <td>{order.id.slice(0, 8)}</td>
+                            <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
+                            <td>KES {order.total}</td>
+                            <td>
+                              <span className={`status ${order.status}`}>{order.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
+            {groupedBySupplier.length === 0 && (
+              <p className="alert alert-info">No purchase orders found.</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* New Supplier Modal */}
+      {showSupplierModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>New Supplier</h3>
             <div className="flex flex-col gap-2">
               <label>Name</label>
               <input
@@ -506,8 +529,8 @@ export default function AdminPurchases() {
               />
             </div>
             <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitSupplierForm}>Save</button>
-              <button className="btn btn-outline" onClick={() => setShowSupplierForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitSupplier}>Save</button>
+              <button className="btn btn-outline" onClick={closeSupplierModal}>Cancel</button>
             </div>
           </div>
         </div>
