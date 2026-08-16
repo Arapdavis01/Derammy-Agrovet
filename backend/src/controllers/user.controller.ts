@@ -1,10 +1,12 @@
 import { Request, Response } from 'express';
-import { supabaseAdmin } from '../config/supabase';
+import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // List all users (admin only)
 export const listUsers = async (req: Request, res: Response) => {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('users')
     .select('id, full_name, username, email, role, status, created_at')
     .order('created_at', { ascending: false });
@@ -21,51 +23,42 @@ export const createUser = async (req: Request, res: Response) => {
     throw new AppError('Full name, username, password, and role are required', 400);
   }
 
-  // Validate role
   const validRoles = ['admin', 'cashier', 'manager'];
   if (!validRoles.includes(role)) {
     throw new AppError('Invalid role', 400);
   }
 
-  // Generate email from username
+  // Check if username already exists
+  const { data: existing } = await supabase
+    .from('users')
+    .select('id')
+    .eq('username', username)
+    .single();
+
+  if (existing) throw new AppError('Username already exists', 409);
+
+  // Hash password
+  const salt = await bcrypt.genSalt(10);
+  const passwordHash = await bcrypt.hash(password, salt);
+
+  // Generate email from username (for display/record only)
   const email = `${username.toLowerCase()}@derammy.agrovet`;
 
-  // Create auth user in Supabase
-  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: fullName,
-      username,
-      role,
-    },
-  });
-
-  if (authError) {
-    throw new AppError(`Failed to create auth user: ${authError.message}`, 400);
-  }
-
-  // Insert into users table
-  const { data: newUser, error: insertError } = await supabaseAdmin
+  const { data: newUser, error } = await supabase
     .from('users')
     .insert({
-      id: authData.user.id,
+      id: uuidv4(),
       full_name: fullName,
       username,
       email,
       role,
       status: 'active',
+      password_hash: passwordHash,
     })
     .select('id, full_name, username, email, role, status, created_at')
     .single();
 
-  if (insertError) {
-    // Rollback auth user if insert fails
-    await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-    throw new AppError(`Failed to create user record: ${insertError.message}`, 400);
-  }
-
+  if (error) throw new AppError('Failed to create user', 500);
   res.status(201).json(newUser);
 };
 
@@ -84,7 +77,7 @@ export const updateUser = async (req: Request, res: Response) => {
   if (status) updates.status = status;
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('users')
     .update(updates)
     .eq('id', id)
@@ -102,9 +95,14 @@ export const resetPassword = async (req: Request, res: Response) => {
 
   if (!newPassword) throw new AppError('New password is required', 400);
 
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, {
-    password: newPassword,
-  });
+  // Hash the new password
+  const salt = await bcrypt.genSalt(10);
+  const passwordHash = await bcrypt.hash(newPassword, salt);
+
+  const { error } = await supabase
+    .from('users')
+    .update({ password_hash: passwordHash })
+    .eq('id', id);
 
   if (error) throw new AppError('Failed to reset password', 400);
   res.json({ message: 'Password updated successfully' });
@@ -113,7 +111,7 @@ export const resetPassword = async (req: Request, res: Response) => {
 // Deactivate user (soft delete)
 export const deactivateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('users')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('id', id)
