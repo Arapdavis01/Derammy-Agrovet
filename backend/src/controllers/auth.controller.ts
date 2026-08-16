@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { supabase, supabaseAdmin } from '../config/supabase';
+import { supabase } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // Login with username and password
@@ -12,10 +12,10 @@ export const login = async (req: Request, res: Response) => {
     throw new AppError('Username and password are required', 400);
   }
 
-  // Find user by username in our users table
+  // Find user by username in public.users
   const { data: userRecord, error: userError } = await supabase
     .from('users')
-    .select('*')
+    .select('id, full_name, username, email, role, status, password_hash')
     .eq('username', username)
     .single();
 
@@ -27,13 +27,9 @@ export const login = async (req: Request, res: Response) => {
     throw new AppError('Account is deactivated. Contact administrator.', 403);
   }
 
-  // Sign in with Supabase Auth using email and password
-  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email: userRecord.email,
-    password: password,
-  });
-
-  if (authError) {
+  // Compare password with stored hash
+  const validPassword = await bcrypt.compare(password, userRecord.password_hash || '');
+  if (!validPassword) {
     throw new AppError('Invalid credentials', 401);
   }
 
@@ -66,8 +62,7 @@ export const getMe = async (req: Request, res: Response) => {
   res.json({ user });
 };
 
-// Logout (client-side will discard token; here we can invalidate Supabase session)
+// Logout (client-side discards token; no server-side action needed)
 export const logout = async (req: Request, res: Response) => {
-  await supabase.auth.signOut();
   res.json({ message: 'Logged out' });
 };
