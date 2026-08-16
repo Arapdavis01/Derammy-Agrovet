@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import styles from '@/styles/Login.module.css';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -15,9 +14,7 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      // login() now returns the user object after successful authentication
       const loggedInUser = await login(username, password);
-
       if (loggedInUser.role === 'cashier') {
         router.push('/cashier/dashboard');
       } else {
@@ -25,8 +22,7 @@ export default function Login() {
       }
       toast.success('Login successful');
     } catch (error: any) {
-      const message =
-        error.response?.data?.error || 'Invalid username or password';
+      const message = error.response?.data?.error || 'Invalid username or password';
       toast.error(message);
     } finally {
       setLoading(false);
@@ -34,14 +30,20 @@ export default function Login() {
   };
 
   return (
-    <div className={styles.container}>
-      <div className={styles.loginCard}>
-        <h1 className={styles.brand}>DERAMMY AGROVET</h1>
-        <p className={styles.subtitle}>Quality Farm Inputs & Veterinary Supplies</p>
+    <div className="login-container">
+      <div className="login-card">
+        <h1 className="login-brand">
+          <i className="fas fa-leaf" style={{ marginRight: '8px' }}></i>
+          DERAMMY AGROVET
+        </h1>
+        <p className="login-subtitle">Quality Farm Inputs & Veterinary Supplies</p>
 
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.inputGroup}>
-            <label htmlFor="username">Username</label>
+        <form onSubmit={handleSubmit} className="login-form">
+          <div>
+            <label htmlFor="username">
+              <i className="fas fa-user" style={{ marginRight: '6px' }}></i>
+              Username
+            </label>
             <input
               id="username"
               type="text"
@@ -54,8 +56,11 @@ export default function Login() {
             />
           </div>
 
-          <div className={styles.inputGroup}>
-            <label htmlFor="password">Password</label>
+          <div>
+            <label htmlFor="password">
+              <i className="fas fa-lock" style={{ marginRight: '6px' }}></i>
+              Password
+            </label>
             <input
               id="password"
               type="password"
@@ -69,14 +74,24 @@ export default function Login() {
 
           <button
             type="submit"
-            className={`btn btn-primary ${styles.loginBtn}`}
+            className="btn btn-primary login-btn"
             disabled={loading}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? (
+              <>
+                <i className="fas fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>
+                Logging in...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-sign-in-alt" style={{ marginRight: '6px' }}></i>
+                Login
+              </>
+            )}
           </button>
         </form>
 
-        <p className={styles.footer}>
+        <p className="login-footer">
           © {new Date().getFullYear()} Derammy Agrovet. All rights reserved.
         </p>
       </div>
