@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/POS.module.css';
 
 interface Product {
   id: string;
@@ -43,8 +42,11 @@ export default function POS() {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa' | 'credit'>('cash');
   const [amountReceived, setAmountReceived] = useState<string>('');
   const [reference, setReference] = useState('');
+  const [discount, setDiscount] = useState<number>(0);
+  const [transport, setTransport] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [saleComplete, setSaleComplete] = useState<any>(null);
+  const [heldCarts, setHeldCarts] = useState<CartItem[]>([]);
 
   // Debounced product search
   useEffect(() => {
@@ -67,7 +69,6 @@ export default function POS() {
     }
   };
 
-  // Customer search
   const handleCustomerSearch = async (term: string) => {
     setCustomerSearch(term);
     if (term.trim().length > 0) {
@@ -83,7 +84,6 @@ export default function POS() {
   };
 
   const addToCart = (product: Product) => {
-    // Check if already in cart
     const existing = cart.find((item) => item.product.id === product.id);
     if (existing) {
       setCart(cart.map((item) =>
@@ -92,7 +92,6 @@ export default function POS() {
     } else {
       setCart([...cart, { product, quantity: 1 }]);
     }
-    // Clear search
     setSearchTerm('');
     setSearchResults([]);
   };
@@ -115,10 +114,18 @@ export default function POS() {
     return cart.reduce((sum, item) => sum + item.quantity * item.product.selling_price, 0);
   };
 
+  const calculateVAT = () => {
+    return calculateSubtotal() * 0.16;
+  };
+
+  const calculateTotal = () => {
+    return calculateSubtotal() + calculateVAT() - discount + transport;
+  };
+
   const calculateChange = () => {
-    const subtotal = calculateSubtotal();
+    const total = calculateTotal();
     const cash = parseFloat(amountReceived) || 0;
-    return cash - subtotal;
+    return cash - total;
   };
 
   const handleSubmitSale = async () => {
@@ -132,12 +139,11 @@ export default function POS() {
       return;
     }
 
-    if (paymentMethod === 'cash' && (parseFloat(amountReceived) || 0) < calculateSubtotal()) {
+    if (paymentMethod === 'cash' && (parseFloat(amountReceived) || 0) < calculateTotal()) {
       toast.error('Insufficient cash received');
       return;
     }
 
-    // Prepare sale payload
     const items = cart.map((item) => ({
       product_id: item.product.id,
       quantity: item.quantity,
@@ -146,8 +152,9 @@ export default function POS() {
     const payload: any = {
       items,
       payment_method: paymentMethod,
-      discount: 0,
-      tax: 0,
+      discount,
+      tax: calculateVAT(),
+      transport,
       sale_status: 'completed',
     };
 
@@ -166,13 +173,14 @@ export default function POS() {
       const res = await api.post('/sales', payload);
       setSaleComplete(res.data);
       toast.success('Sale completed successfully');
-      // Clear cart
       setCart([]);
       setCustomer(null);
       setCustomerSearch('');
       setPaymentMethod('cash');
       setAmountReceived('');
       setReference('');
+      setDiscount(0);
+      setTransport(0);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to complete sale');
     } finally {
@@ -180,40 +188,68 @@ export default function POS() {
     }
   };
 
+  const holdCart = () => {
+    if (cart.length === 0) {
+      toast.error('Cart is empty');
+      return;
+    }
+    setHeldCarts([...heldCarts, ...cart]);
+    setCart([]);
+    toast.success('Cart held successfully');
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    setCustomer(null);
+    setCustomerSearch('');
+    setPaymentMethod('cash');
+    setAmountReceived('');
+    setReference('');
+    setDiscount(0);
+    setTransport(0);
+  };
+
   return (
     <Layout>
-      <div className={styles.posContainer}>
-        {/* Left side: Product search and cart */}
-        <div className={styles.leftPane}>
-          <h2>New Sale</h2>
-          <input
-            type="text"
-            placeholder="Search product by name, SKU, or barcode..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input"
-            autoFocus
-          />
+      <div className="pos-container">
+        {/* Left: Product search & list */}
+        <div className="pos-left">
+          <h2><i className="fas fa-boxes-stacked" style={{ marginRight: '8px' }}></i>Products</h2>
+          <div className="pos-search-wrapper">
+            <i className="fas fa-search pos-search-icon"></i>
+            <input
+              type="text"
+              placeholder="Search product by name, SKU, or barcode..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input pos-search-input"
+              autoFocus
+            />
+          </div>
+
           {searchResults.length > 0 && (
-            <div className={styles.searchResults}>
+            <div className="pos-search-results">
               {searchResults.map((product) => (
                 <div
                   key={product.id}
-                  className={styles.searchItem}
+                  className="pos-search-item"
                   onClick={() => addToCart(product)}
                 >
-                  <span>{product.name}</span>
-                  <span>KES {product.selling_price}/{product.unit}</span>
+                  <div className="pos-product-info">
+                    <span className="pos-product-name">{product.name}</span>
+                    <span className="pos-product-stock">
+                      Stock: {product.stock_batches?.reduce((sum, b) => sum + Number(b.quantity_remaining), 0) || 0} {product.unit}
+                    </span>
+                  </div>
+                  <span className="pos-product-price">KES {product.selling_price}/{product.unit}</span>
                 </div>
               ))}
             </div>
           )}
 
-          <div className={styles.cart}>
-            <h3>Cart Items</h3>
-            {cart.length === 0 ? (
-              <p>No items in cart.</p>
-            ) : (
+          {cart.length > 0 && (
+            <div className="pos-cart-items">
+              <h3>Cart Items</h3>
               <table className="table">
                 <thead>
                   <tr>
@@ -235,75 +271,109 @@ export default function POS() {
                           step="0.1"
                           value={item.quantity}
                           onChange={(e) => updateQuantity(item.product.id, parseFloat(e.target.value) || 0)}
-                          className={styles.qtyInput}
+                          className="input pos-qty-input"
                         />
                       </td>
                       <td>KES {item.product.selling_price}</td>
                       <td>KES {(item.quantity * item.product.selling_price).toFixed(2)}</td>
                       <td>
-                        <button className="btn btn-danger btn-sm" onClick={() => removeFromCart(item.product.id)}>✕</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => removeFromCart(item.product.id)}>
+                          <i className="fas fa-times"></i>
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Right side: Customer, payment, totals */}
-        <div className={styles.rightPane}>
-          <h3>Customer</h3>
+        {/* Right: Customer, totals, payment */}
+        <div className="pos-right">
+          <h3><i className="fas fa-user" style={{ marginRight: '8px' }}></i>Customer</h3>
           <input
             type="text"
-            placeholder="Search customer (optional for cash)"
+            placeholder="Type name to search or enter new..."
             value={customerSearch}
             onChange={(e) => handleCustomerSearch(e.target.value)}
             className="input"
           />
           {customerResults.length > 0 && (
-            <div className={styles.searchResults}>
+            <div className="pos-search-results">
               {customerResults.map((cust) => (
                 <div
                   key={cust.id}
-                  className={styles.searchItem}
+                  className="pos-search-item"
                   onClick={() => {
                     setCustomer(cust);
                     setCustomerSearch(cust.name);
                     setCustomerResults([]);
                   }}
                 >
-                  {cust.name} {cust.credit_balance ? `(Owes: KES ${cust.credit_balance})` : ''}
+                  <span>{cust.name}</span>
+                  {cust.credit_balance ? <span className="pos-credit-badge">Owes: KES {cust.credit_balance}</span> : null}
                 </div>
               ))}
             </div>
           )}
           {customer && (
-            <div className={styles.selectedCustomer}>
+            <div className="pos-selected-customer">
               <strong>Selected:</strong> {customer.name}
-              <button className="btn btn-sm btn-outline" onClick={() => setCustomer(null)}>Clear</button>
+              <button className="btn btn-sm btn-outline" onClick={() => setCustomer(null)}>
+                <i className="fas fa-times"></i>
+              </button>
             </div>
           )}
 
-          <h3>Payment Method</h3>
-          <div className={styles.paymentMethods}>
-            <label className={paymentMethod === 'cash' ? styles.selected : ''}>
+          <h3 className="mt-4"><i className="fas fa-cash-register" style={{ marginRight: '8px' }}></i>Register</h3>
+          <div className="pos-totals">
+            <p>Subtotal (excl. VAT): <strong>KES {calculateSubtotal().toFixed(2)}</strong></p>
+            <p>VAT (16%): <strong>KES {calculateVAT().toFixed(2)}</strong></p>
+            <p>
+              Discount: 
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={discount}
+                onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                className="input pos-total-input"
+              />
+            </p>
+            <p>
+              Transport: 
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={transport}
+                onChange={(e) => setTransport(parseFloat(e.target.value) || 0)}
+                className="input pos-total-input"
+              />
+            </p>
+            <p className="pos-grand-total">TOTAL: <strong>KES {calculateTotal().toFixed(2)}</strong></p>
+          </div>
+
+          <h4>Payment Method</h4>
+          <div className="pos-payment-methods">
+            <label className={`pos-payment-method ${paymentMethod === 'cash' ? 'selected' : ''}`}>
               <input type="radio" value="cash" checked={paymentMethod === 'cash'} onChange={() => setPaymentMethod('cash')} />
-              Cash
+              <i className="fas fa-money-bill-wave" style={{ marginRight: '4px' }}></i> Cash
             </label>
-            <label className={paymentMethod === 'mpesa' ? styles.selected : ''}>
+            <label className={`pos-payment-method ${paymentMethod === 'mpesa' ? 'selected' : ''}`}>
               <input type="radio" value="mpesa" checked={paymentMethod === 'mpesa'} onChange={() => setPaymentMethod('mpesa')} />
-              M-Pesa
+              <i className="fas fa-mobile-alt" style={{ marginRight: '4px' }}></i> M-Pesa
             </label>
-            <label className={paymentMethod === 'credit' ? styles.selected : ''}>
+            <label className={`pos-payment-method ${paymentMethod === 'credit' ? 'selected' : ''}`}>
               <input type="radio" value="credit" checked={paymentMethod === 'credit'} onChange={() => setPaymentMethod('credit')} />
-              Credit
+              <i className="fas fa-file-invoice-dollar" style={{ marginRight: '4px' }}></i> Credit
             </label>
           </div>
 
           {paymentMethod === 'cash' && (
-            <div className={styles.paymentDetails}>
-              <label>Amount Received</label>
+            <div className="mt-2">
+              <label>Amount Tendered (KES)</label>
               <input
                 type="number"
                 min="0"
@@ -311,13 +381,14 @@ export default function POS() {
                 value={amountReceived}
                 onChange={(e) => setAmountReceived(e.target.value)}
                 className="input"
-                placeholder="0.00"
+                placeholder="Enter amount given by customer"
               />
+              {amountReceived && <p>Change: <strong>KES {calculateChange().toFixed(2)}</strong></p>}
             </div>
           )}
 
           {paymentMethod === 'mpesa' && (
-            <div className={styles.paymentDetails}>
+            <div className="mt-2">
               <label>M-Pesa Reference (optional)</label>
               <input
                 type="text"
@@ -329,35 +400,48 @@ export default function POS() {
             </div>
           )}
 
-          <div className={styles.totals}>
-            <p>Subtotal: KES {calculateSubtotal().toFixed(2)}</p>
-            <p>Discount: KES 0.00</p>
-            <p>Tax: KES 0.00</p>
-            <h3>Total: KES {calculateSubtotal().toFixed(2)}</h3>
-            {paymentMethod === 'cash' && amountReceived && (
-              <p>Change: KES {calculateChange().toFixed(2)}</p>
-            )}
+          <div className="flex gap-2 mt-4">
+            <button className="btn btn-outline btn-sm" onClick={holdCart}>
+              <i className="fas fa-pause" style={{ marginRight: '4px' }}></i> Hold Cart
+            </button>
+            <span className="pos-held-count">Held Carts ({heldCarts.length})</span>
           </div>
 
           <button
-            className="btn btn-primary"
-            style={{ width: '100%', padding: '1rem', fontSize: '1.2rem' }}
+            className="btn btn-primary pos-complete-btn mt-4"
             onClick={handleSubmitSale}
             disabled={loading}
           >
-            {loading ? 'Processing...' : 'Complete Sale'}
+            {loading ? (
+              <>
+                <i className="fas fa-spinner fa-spin" style={{ marginRight: '6px' }}></i> Processing...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-check-circle" style={{ marginRight: '6px' }}></i> Complete Sale
+              </>
+            )}
           </button>
+
+          <div className="flex gap-2 mt-2">
+            <button className="btn btn-outline btn-sm" onClick={() => router.push('/cashier/returns')}>
+              <i className="fas fa-rotate-left" style={{ marginRight: '4px' }}></i> Return / Exchange
+            </button>
+            <button className="btn btn-danger btn-sm" onClick={clearCart}>
+              <i className="fas fa-trash" style={{ marginRight: '4px' }}></i> Clear Cart
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Sale complete modal */}
       {saleComplete && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
+        <div className="modal-overlay">
+          <div className="modal">
             <h3>Sale Completed</h3>
-            <p>Invoice: {saleComplete.invoice_no}</p>
-            <p>Total: KES {saleComplete.total}</p>
-            <p>Payment: {saleComplete.payment_method}</p>
+            <p><strong>Invoice:</strong> {saleComplete.invoice_no}</p>
+            <p><strong>Total:</strong> KES {saleComplete.total}</p>
+            <p><strong>Payment:</strong> {saleComplete.payment_method}</p>
             <button className="btn btn-primary" onClick={() => setSaleComplete(null)}>Close</button>
           </div>
         </div>
