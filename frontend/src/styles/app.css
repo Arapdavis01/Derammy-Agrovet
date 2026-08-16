@@ -269,7 +269,11 @@ label {
   background: var(--gray-50);
 }
 
-/* ---------- Cards ---------- */
+/* ============================================
+   CARDS – GENERIC & DASHBOARD & SUMMARY
+   ============================================ */
+
+/* Generic Card */
 .card {
   background: var(--bg-card);
   border-radius: var(--border-radius-lg);
@@ -287,7 +291,8 @@ label {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
-/* Dashboard Card */
+
+/* Dashboard Card (with icon and left accent border) */
 .dashboard-card {
   display: flex;
   gap: var(--space-3);
@@ -327,6 +332,36 @@ label {
 .dashboard-card-subtitle {
   font-size: var(--font-size-xs);
   color: var(--gray-600);
+  margin-top: var(--space-1);
+}
+
+/* Summary Card (centered, used on Inventory dashboard) */
+.summary-card {
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--box-shadow-md);
+}
+
+.card-icon {
+  font-size: 2rem;
+  margin-bottom: var(--space-2);
+}
+
+.summary-value {
+  font-size: var(--font-size-2xl);
+  font-weight: bold;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.summary-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
   margin-top: var(--space-1);
 }
 /* ---------- Alerts ---------- */
