@@ -4,7 +4,6 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Products.module.css';
 
 interface Category {
   id: string;
@@ -25,25 +24,16 @@ interface Product {
   is_returnable: boolean;
   tax_rate: number;
   track_batch_expiry: boolean;
-  created_at: string;
+  total_stock?: number;
 }
 
 export default function AdminProducts() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'products' | 'categories'>('products');
-
-  // Products state
   const [products, setProducts] = useState<Product[]>([]);
-  const [totalProducts, setTotalProducts] = useState(0);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(20);
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(false);
-
-  // Product form modal
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
@@ -60,12 +50,6 @@ export default function AdminProducts() {
     track_batch_expiry: false,
   });
 
-  // Categories state
-  const [categoryList, setCategoryList] = useState<Category[]>([]);
-  const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ name: '' });
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -75,43 +59,22 @@ export default function AdminProducts() {
       router.push('/cashier/dashboard');
       return;
     }
-    fetchCategories();
-    if (activeTab === 'products') {
-      fetchProducts();
-    } else {
-      fetchCategoryList();
-    }
-  }, [user, activeTab, page, search, categoryFilter]);
+    fetchData();
+  }, [user, search]);
 
-  const fetchProducts = async () => {
-    setLoadingProducts(true);
+  const fetchData = async () => {
+    setLoading(true);
     try {
-      const params: any = { page, limit, search: search || undefined, category_id: categoryFilter || undefined };
-      const res = await api.get('/products', { params });
-      setProducts(res.data.data);
-      setTotalProducts(res.data.total);
+      const [productsRes, categoriesRes] = await Promise.all([
+        api.get('/products', { params: { search: search || undefined, limit: 200 } }),
+        api.get('/categories'),
+      ]);
+      setProducts(productsRes.data.data || []);
+      setCategories(categoriesRes.data);
     } catch (error: any) {
       toast.error('Failed to fetch products');
     } finally {
-      setLoadingProducts(false);
-    }
-  };
-
-  const fetchCategories = async () => {
-    try {
-      const res = await api.get('/categories');
-      setCategories(res.data);
-    } catch (error: any) {
-      // ignore
-    }
-  };
-
-  const fetchCategoryList = async () => {
-    try {
-      const res = await api.get('/categories');
-      setCategoryList(res.data);
-    } catch (error: any) {
-      toast.error('Failed to fetch categories');
+      setLoading(false);
     }
   };
 
@@ -155,7 +118,6 @@ export default function AdminProducts() {
   };
 
   const submitProductForm = async () => {
-    // Basic validation
     if (!productForm.name || !productForm.unit || productForm.cost_price === '' || productForm.selling_price === '') {
       toast.error('Name, unit, cost price, and selling price are required');
       return;
@@ -164,7 +126,6 @@ export default function AdminProducts() {
       toast.error('Selling price cannot be less than cost price');
       return;
     }
-
     const payload = {
       ...productForm,
       cost_price: parseFloat(productForm.cost_price),
@@ -183,7 +144,7 @@ export default function AdminProducts() {
         toast.success('Product created');
       }
       setShowProductForm(false);
-      fetchProducts();
+      fetchData();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to save product');
     }
@@ -194,184 +155,111 @@ export default function AdminProducts() {
     try {
       await api.delete(`/products/${id}`);
       toast.success('Product deleted');
-      fetchProducts();
+      fetchData();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to delete product');
     }
   };
 
-  // Category handlers
-  const handleOpenCategoryForm = (category?: Category) => {
-    if (category) {
-      setEditingCategory(category);
-      setCategoryForm({ name: category.name });
-    } else {
-      setEditingCategory(null);
-      setCategoryForm({ name: '' });
-    }
-    setShowCategoryForm(true);
-  };
-
-  const submitCategoryForm = async () => {
-    if (!categoryForm.name.trim()) {
-      toast.error('Category name is required');
-      return;
-    }
-    try {
-      if (editingCategory) {
-        await api.put(`/categories/${editingCategory.id}`, { name: categoryForm.name.trim() });
-        toast.success('Category updated');
-      } else {
-        await api.post('/categories', { name: categoryForm.name.trim() });
-        toast.success('Category created');
-      }
-      setShowCategoryForm(false);
-      fetchCategoryList();
-      fetchCategories();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to save category');
-    }
-  };
-
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Delete this category?')) return;
-    try {
-      await api.delete(`/categories/${id}`);
-      toast.success('Category deleted');
-      fetchCategoryList();
-      fetchCategories();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to delete category');
-    }
-  };
-
-  const totalPages = Math.ceil(totalProducts / limit);
-
   return (
     <Layout>
       <div className="flex justify-between items-center mb-4">
-        <h1>Products Management</h1>
-        <button className="btn btn-primary" onClick={() => handleOpenProductForm()}>Add Product</button>
-      </div>
-
-      <div className={styles.tabs}>
-        <button
-          className={`${styles.tab} ${activeTab === 'products' ? styles.active : ''}`}
-          onClick={() => setActiveTab('products')}
-        >
-          Products
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'categories' ? styles.active : ''}`}
-          onClick={() => setActiveTab('categories')}
-        >
-          Categories
+        <div>
+          <h1>Products ({products.length} items)</h1>
+          <p className="text-muted">Manage your product catalog and inventory.</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => handleOpenProductForm()}>
+          <i className="fas fa-plus" style={{ marginRight: '6px' }}></i> Add Product
         </button>
       </div>
 
-      {activeTab === 'products' && (
-        <>
-          {/* Search & Filter */}
-          <div className={styles.filters}>
-            <input
-              type="text"
-              placeholder="Search name, SKU, barcode..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="input"
-            />
-            <select
-              value={categoryFilter}
-              onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-              className="input"
-            >
-              <option value="">All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-          </div>
+      {/* Search */}
+      <div className="filters">
+        <input
+          type="text"
+          placeholder="Search by name, brand, variant, or category (e.g., cement)..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input"
+        />
+        <button className="btn btn-outline" onClick={fetchData}>
+          <i className="fas fa-search" style={{ marginRight: '6px' }}></i> Search
+        </button>
+      </div>
 
-          {/* Products Table */}
-          <table className="table mt-4">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>SKU</th>
-                <th>Category</th>
-                <th>Unit</th>
-                <th>Cost Price</th>
-                <th>Selling Price</th>
-                <th>Batch Tracked</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((product) => (
-                <tr key={product.id}>
-                  <td>{product.name}</td>
-                  <td>{product.sku || '-'}</td>
-                  <td>{product.category?.name || '-'}</td>
-                  <td>{product.unit}</td>
-                  <td>KES {product.cost_price}</td>
-                  <td>KES {product.selling_price}</td>
-                  <td>{product.track_batch_expiry ? 'Yes' : 'No'}</td>
-                  <td>
-                    <button className="btn btn-sm btn-outline" onClick={() => handleOpenProductForm(product)}>Edit</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDeleteProduct(product.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {products.length === 0 && (
-                <tr><td colSpan={8} className="text-center">No products found</td></tr>
-              )}
-            </tbody>
-          </table>
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <div className="mt-4">
+          {products.length === 0 ? (
+            <p className="alert alert-info">No products found.</p>
+          ) : (
+            products.map((product) => (
+              <div key={product.id} className="card mb-2">
+                <div className="flex justify-between items-center">
+                  <h3 className="card-title" style={{ marginBottom: '0' }}>
+                    <i className="fas fa-box" style={{ marginRight: '8px' }}></i>
+                    {product.name}
+                    <span className="text-muted" style={{ fontSize: '0.9rem', marginLeft: '8px' }}>
+                      1 variant
+                    </span>
+                  </h3>
+                  <button className="btn btn-sm btn-outline" onClick={() => handleOpenProductForm(product)}>
+                    <i className="fas fa-plus" style={{ marginRight: '4px' }}></i> Add Variant
+                  </button>
+                </div>
 
-          {totalPages > 1 && (
-            <div className="flex justify-between mt-4">
-              <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
-              <span>Page {page} of {totalPages}</span>
-              <button className="btn btn-outline btn-sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
-            </div>
+                <table className="table mt-2">
+                  <thead>
+                    <tr>
+                      <th>Brand</th>
+                      <th>Variant</th>
+                      <th>Category</th>
+                      <th>Buy Price</th>
+                      <th>Sell Price</th>
+                      <th>Stock</th>
+                      <th>Unit</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>{product.sku || 'Default'}</td>
+                      <td>{product.name}</td>
+                      <td>{product.category?.name || 'Uncategorized'}</td>
+                      <td>KES {product.cost_price.toFixed(2)}</td>
+                      <td>KES {product.selling_price.toFixed(2)}/{product.unit}</td>
+                      <td>{product.total_stock || 0}</td>
+                      <td>{product.unit}</td>
+                      <td>
+                        {product.total_stock === 0 ? (
+                          <span className="status inactive">Out of Stock</span>
+                        ) : (
+                          <span className="status active">OK</span>
+                        )}
+                      </td>
+                      <td>
+                        <button className="btn btn-sm btn-outline" onClick={() => handleOpenProductForm(product)}>
+                          <i className="fas fa-edit"></i>
+                        </button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDeleteProduct(product.id)}>
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ))
           )}
-        </>
-      )}
-
-      {activeTab === 'categories' && (
-        <>
-          <div className="flex justify-end mb-4">
-            <button className="btn btn-outline" onClick={() => handleOpenCategoryForm()}>Add Category</button>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categoryList.map((cat) => (
-                <tr key={cat.id}>
-                  <td>{cat.name}</td>
-                  <td>
-                    <button className="btn btn-sm btn-outline" onClick={() => handleOpenCategoryForm(cat)}>Edit</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDeleteCategory(cat.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {categoryList.length === 0 && (
-                <tr><td colSpan={2} className="text-center">No categories found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </>
+        </div>
       )}
 
       {/* Product Form Modal */}
       {showProductForm && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modalLarge}>
+        <div className="modal-overlay">
+          <div className="modal modal-large">
             <h3>{editingProduct ? 'Edit Product' : 'Add Product'}</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -379,7 +267,7 @@ export default function AdminProducts() {
                 <input type="text" value={productForm.name} onChange={(e) => handleProductFormChange('name', e.target.value)} className="input" />
               </div>
               <div>
-                <label>SKU</label>
+                <label>SKU / Brand</label>
                 <input type="text" value={productForm.sku} onChange={(e) => handleProductFormChange('sku', e.target.value)} className="input" />
               </div>
               <div>
@@ -397,7 +285,7 @@ export default function AdminProducts() {
               </div>
               <div>
                 <label>Unit *</label>
-                <input type="text" value={productForm.unit} onChange={(e) => handleProductFormChange('unit', e.target.value)} className="input" placeholder="e.g., kg, litre, piece" />
+                <input type="text" value={productForm.unit} onChange={(e) => handleProductFormChange('unit', e.target.value)} className="input" placeholder="e.g., kg, bag, litre" />
               </div>
               <div>
                 <label>Cost Price *</label>
@@ -415,13 +303,11 @@ export default function AdminProducts() {
                 <label>Tax Rate (%)</label>
                 <input type="number" step="0.01" min="0" value={productForm.tax_rate} onChange={(e) => handleProductFormChange('tax_rate', e.target.value)} className="input" />
               </div>
-              <div>
+              <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={productForm.is_returnable} onChange={(e) => handleProductFormChange('is_returnable', e.target.checked)} />
-                  Is Returnable
+                  Returnable
                 </label>
-              </div>
-              <div>
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={productForm.track_batch_expiry} onChange={(e) => handleProductFormChange('track_batch_expiry', e.target.checked)} />
                   Track Batch/Expiry
@@ -431,23 +317,6 @@ export default function AdminProducts() {
             <div className="flex gap-2 mt-4">
               <button className="btn btn-primary" onClick={submitProductForm}>Save</button>
               <button className="btn btn-outline" onClick={() => setShowProductForm(false)}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Category Form Modal */}
-      {showCategoryForm && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h3>{editingCategory ? 'Edit Category' : 'Add Category'}</h3>
-            <div className="flex flex-col gap-2">
-              <label>Name</label>
-              <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ name: e.target.value })} className="input" />
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitCategoryForm}>Save</button>
-              <button className="btn btn-outline" onClick={() => setShowCategoryForm(false)}>Cancel</button>
             </div>
           </div>
         </div>
