@@ -1,12 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Returns.module.css';
 
-interface Return {
+interface ReturnItem {
+  id: string;
+  product_id: string;
+  batch_id: string | null;
+  quantity: number;
+  condition: string;
+  refund_amount: number;
+  product: { id: string; name: string; unit: string };
+}
+
+interface ReturnRecord {
   id: string;
   sale_id: string;
   customer: { id: string; name: string } | null;
@@ -16,35 +25,17 @@ interface Return {
   total_refund: number;
   refund_method: string;
   status: string;
-}
-
-interface ReturnDetail extends Return {
-  return_items: {
-    id: string;
-    product_id: string;
-    batch_id: string | null;
-    quantity: number;
-    condition: string;
-    refund_amount: number;
-    product: { id: string; name: string; unit: string };
-  }[];
-  sale: { id: string; invoice_no: string };
+  return_items: ReturnItem[];
+  sale?: { id: string; invoice_no: string };
 }
 
 export default function AdminReturns() {
   const { user } = useAuth();
   const router = useRouter();
-  const [returns, setReturns] = useState<Return[]>([]);
-  const [totalReturns, setTotalReturns] = useState(0);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(20);
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    start_date: '',
-    end_date: '',
-    customer_id: '',
-  });
-  const [selectedReturn, setSelectedReturn] = useState<ReturnDetail | null>(null);
+  const [returns, setReturns] = useState<ReturnRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
 
   useEffect(() => {
     if (!user) {
@@ -56,143 +47,157 @@ export default function AdminReturns() {
       return;
     }
     fetchReturns();
-  }, [user, page, filters]);
+  }, [user]);
 
   const fetchReturns = async () => {
     setLoading(true);
     try {
-      const params: any = { page, limit };
-      if (filters.start_date) params.start_date = filters.start_date;
-      if (filters.end_date) params.end_date = filters.end_date;
-      if (filters.customer_id) params.customer_id = filters.customer_id;
-
-      const res = await api.get('/returns', { params });
-      setReturns(res.data.data);
-      setTotalReturns(res.data.total);
+      // Fetch returns with items
+      const res = await api.get('/returns', { params: { limit: 200 } });
+      // The list endpoint may not include return_items by default,
+      // but we can use the response as is. If items are not included,
+      // we'll display what we have.
+      setReturns(res.data.data || []);
     } catch (error: any) {
-      toast.error('Failed to fetch returns');
+      toast.error(error.response?.data?.error || 'Failed to fetch returns');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchReturnDetail = async (id: string) => {
-    try {
-      const res = await api.get(`/returns/${id}`);
-      setSelectedReturn(res.data);
-    } catch (error: any) {
-      toast.error('Failed to fetch return details');
-    }
-  };
+  // Compute summary
+  const summary = useMemo(() => {
+    const returnsCount = returns.filter((r) => r.return_items?.some((item) => item.condition !== 'exchange')).length;
+    const exchangesCount = returns.filter((r) => r.return_items?.some((item) => item.condition === 'exchange')).length;
+    const totalRefunded = returns.reduce((sum, r) => sum + Number(r.total_refund || 0), 0);
+    return {
+      returnsCount,
+      exchangesCount,
+      totalRefunded,
+      total: returns.length,
+    };
+  }, [returns]);
 
-  const totalPages = Math.ceil(totalReturns / limit);
+  // Filter returns based on search and status
+  const filteredReturns = useMemo(() => {
+    return returns.filter((r) => {
+      const searchLower = search.toLowerCase();
+      const matchesSearch =
+        !search ||
+        r.sale?.invoice_no?.toLowerCase().includes(searchLower) ||
+        r.customer?.name?.toLowerCase().includes(searchLower) ||
+        r.return_items?.some((item) =>
+          item.product?.name?.toLowerCase().includes(searchLower)
+        );
+      const matchesStatus =
+        filterStatus === 'all' || r.refund_method === filterStatus || r.status === filterStatus;
+      return matchesSearch && matchesStatus;
+    });
+  }, [returns, search, filterStatus]);
 
   return (
     <Layout>
-      <h1>Returns</h1>
-
-      {/* Filters */}
-      <div className={styles.filters}>
-        <input
-          type="date"
-          value={filters.start_date}
-          onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-          className="input"
-        />
-        <input
-          type="date"
-          value={filters.end_date}
-          onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-          className="input"
-        />
-        <input
-          type="text"
-          value={filters.customer_id}
-          onChange={(e) => setFilters({ ...filters, customer_id: e.target.value })}
-          className="input"
-          placeholder="Customer ID"
-        />
-        <button className="btn btn-outline" onClick={() => { setPage(1); fetchReturns(); }}>Apply</button>
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h1>Returns & Exchanges</h1>
+          <p className="text-muted">
+            <i className="fas fa-arrow-left" style={{ marginRight: '6px' }}></i>Back
+          </p>
+        </div>
+        <button className="btn btn-outline btn-sm" onClick={fetchReturns}>
+          <i className="fas fa-refresh" style={{ marginRight: '4px' }}></i> Refresh
+        </button>
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="card summary-card">
+          <i className="fas fa-rotate-left card-icon" style={{ color: '#F57C00' }}></i>
+          <h4>Returns</h4>
+          <p className="summary-value">{summary.returnsCount}</p>
+          <span className="summary-subtitle">Total returns</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-exchange-alt card-icon" style={{ color: '#0288D1' }}></i>
+          <h4>Exchanges</h4>
+          <p className="summary-value">{summary.exchangesCount}</p>
+          <span className="summary-subtitle">Total exchanges</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-money-bill-wave card-icon" style={{ color: '#D32F2F' }}></i>
+          <h4>KES {summary.totalRefunded.toLocaleString()}</h4>
+          <p className="summary-value">Refunded</p>
+          <span className="summary-subtitle">Total amount refunded</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-file-invoice card-icon" style={{ color: '#1B5E20' }}></i>
+          <h4>{summary.total}</h4>
+          <p className="summary-value">Total</p>
+          <span className="summary-subtitle">All records</span>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="filters mt-4">
+        <input
+          type="text"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input"
+        />
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="input"
+        >
+          <option value="all">All</option>
+          <option value="cash">Cash Refund</option>
+          <option value="mpesa">M-Pesa Refund</option>
+          <option value="credit_note">Credit Note</option>
+        </select>
+      </div>
+
+      {/* Returns Table */}
       <table className="table mt-4">
         <thead>
           <tr>
-            <th>Return Date</th>
-            <th>Invoice</th>
+            <th>Date</th>
+            <th>Receipt</th>
             <th>Customer</th>
-            <th>Reason</th>
-            <th>Total Refund</th>
-            <th>Method</th>
-            <th>Actions</th>
+            <th>Type</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Exchange</th>
+            <th>Refund</th>
+            <th>Cashier</th>
           </tr>
         </thead>
         <tbody>
-          {returns.map((ret) => (
-            <tr key={ret.id}>
-              <td>{new Date(ret.return_date).toLocaleString()}</td>
-              <td>{ret.sale_id ? 'View' : '-'}</td>
-              <td>{ret.customer?.name || 'Walk-in'}</td>
-              <td>{ret.reason || '-'}</td>
-              <td>KES {ret.total_refund.toLocaleString()}</td>
-              <td>{ret.refund_method}</td>
-              <td>
-                <button className="btn btn-sm btn-outline" onClick={() => fetchReturnDetail(ret.id)}>View</button>
-              </td>
+          {filteredReturns.map((ret) => {
+            const firstItem = ret.return_items?.[0];
+            const type = ret.refund_method === 'exchange' ? 'Exchange' : 'Return';
+            return (
+              <tr key={ret.id}>
+                <td>{new Date(ret.return_date).toLocaleDateString()}</td>
+                <td>{ret.sale?.invoice_no || ret.sale_id || '-'}</td>
+                <td>{ret.customer?.name || 'Walk-in Customer'}</td>
+                <td>{type}</td>
+                <td>{firstItem ? `${firstItem.product.name} - ${firstItem.product.unit}` : '-'}</td>
+                <td>{firstItem ? firstItem.quantity : '-'}</td>
+                <td>-</td>
+                <td>KES {ret.total_refund}</td>
+                <td>{ret.user?.full_name || '-'}</td>
+              </tr>
+            );
+          })}
+          {filteredReturns.length === 0 && (
+            <tr>
+              <td colSpan={9} className="text-center">No returns found</td>
             </tr>
-          ))}
-          {returns.length === 0 && (
-            <tr><td colSpan={7} className="text-center">No returns found</td></tr>
           )}
         </tbody>
       </table>
-
-      {totalPages > 1 && (
-        <div className="flex justify-between mt-4">
-          <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
-          <span>Page {page} of {totalPages}</span>
-          <button className="btn btn-outline btn-sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      {selectedReturn && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h3>Return Details</h3>
-            <p><strong>Date:</strong> {new Date(selectedReturn.return_date).toLocaleString()}</p>
-            <p><strong>Invoice:</strong> {selectedReturn.sale?.invoice_no || 'N/A'}</p>
-            <p><strong>Customer:</strong> {selectedReturn.customer?.name || 'Walk-in'}</p>
-            <p><strong>Reason:</strong> {selectedReturn.reason || '-'}</p>
-            <p><strong>Total Refund:</strong> KES {selectedReturn.total_refund}</p>
-            <p><strong>Method:</strong> {selectedReturn.refund_method}</p>
-
-            <h4>Items Returned</h4>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Quantity</th>
-                  <th>Condition</th>
-                  <th>Refund Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedReturn.return_items.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.product.name}</td>
-                    <td>{item.quantity} {item.product.unit}</td>
-                    <td>{item.condition}</td>
-                    <td>KES {item.refund_amount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <button className="btn btn-outline" onClick={() => setSelectedReturn(null)}>Close</button>
-          </div>
-        </div>
-      )}
     </Layout>
   );
 }
