@@ -1,5 +1,4 @@
 import React from 'react';
-import styles from './Card.module.css';
 
 interface CardProps {
   title: string;
@@ -12,16 +11,16 @@ interface CardProps {
 
 const Card: React.FC<CardProps> = ({ title, value, subtitle, icon, color, onClick }) => {
   return (
-    <div 
-      className={styles.card} 
-      onClick={onClick} 
+    <div
+      className="card dashboard-card"
+      onClick={onClick}
       style={{ borderTop: `4px solid ${color || '#1B5E20'}` }}
     >
-      {icon && <div className={styles.icon}>{icon}</div>}
-      <div className={styles.content}>
-        <h3 className={styles.title}>{title}</h3>
-        <p className={styles.value}>{value}</p>
-        {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+      {icon && <i className={`fas ${icon} dashboard-card-icon`}></i>}
+      <div className="dashboard-card-content">
+        <h3 className="dashboard-card-title">{title}</h3>
+        <p className="dashboard-card-value">{value}</p>
+        {subtitle && <p className="dashboard-card-subtitle">{subtitle}</p>}
       </div>
     </div>
   );
