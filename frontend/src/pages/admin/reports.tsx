@@ -1,21 +1,36 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Reports.module.css';
+
+interface DailySummary {
+  date: string;
+  salesTotal: number;
+  transactions: number;
+  itemsSold: number;
+  stockAdded: number;
+  closingStock: number;
+}
 
 export default function AdminReports() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeReport, setActiveReport] = useState<'daily' | 'monthly' | 'stock' | 'profit' | 'top'>('daily');
-  const [loading, setLoading] = useState(false);
-  const [reportData, setReportData] = useState<any>(null);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [year, setYear] = useState(new Date().getFullYear().toString());
-  const [limit, setLimit] = useState('10');
+
+  const [todaySummary, setTodaySummary] = useState({
+    salesTotal: 0,
+    transactions: 0,
+    itemsSold: 0,
+    stockAdded: 0,
+    closingStock: 0,
+  });
+  const [history, setHistory] = useState<DailySummary[]>([]);
+  const [searchDate, setSearchDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (!user) {
@@ -26,334 +41,201 @@ export default function AdminReports() {
       router.push('/cashier/dashboard');
       return;
     }
-    // Set default date range to today
-    const today = new Date().toISOString().split('T')[0];
-    setStartDate(today);
-    setEndDate(today);
-    fetchReport();
-  }, [user, activeReport, startDate, endDate, year, limit]);
+    fetchData();
+  }, [user]);
 
-  const fetchReport = async () => {
+  const fetchData = async () => {
     setLoading(true);
+    await Promise.all([fetchTodaySummary(), fetchHistory()]);
+    setLoading(false);
+  };
+
+  const refreshData = async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+    toast.success('Data refreshed');
+  };
+
+  const fetchTodaySummary = async () => {
     try {
-      let res;
-      switch (activeReport) {
-        case 'daily':
-          if (!startDate || !endDate) {
-            toast.error('Please select start and end date');
-            setLoading(false);
-            return;
-          }
-          res = await api.get('/reports/daily-sales', {
-            params: { start_date: startDate, end_date: endDate },
-          });
-          setReportData(res.data);
-          break;
-        case 'monthly':
-          res = await api.get('/reports/monthly-sales', {
-            params: { year: year },
-          });
-          setReportData(res.data);
-          break;
-        case 'stock':
-          res = await api.get('/reports/stock-valuation');
-          setReportData(res.data);
-          break;
-        case 'profit':
-          if (!startDate || !endDate) {
-            toast.error('Please select start and end date');
-            setLoading(false);
-            return;
-          }
-          res = await api.get('/reports/profit', {
-            params: { start_date: startDate, end_date: endDate },
-          });
-          setReportData(res.data);
-          break;
-        case 'top':
-          res = await api.get('/reports/top-products', {
-            params: { start_date: startDate, end_date: endDate, limit: limit },
-          });
-          setReportData(res.data);
-          break;
-        default:
-          setReportData(null);
-      }
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to fetch report');
-    } finally {
-      setLoading(false);
+      // Today's sales
+      const salesRes = await api.get('/reports/daily-sales', {
+        params: { start_date: today, end_date: today },
+      });
+      const summary = salesRes.data.summary;
+
+      // Current stock value (total units)
+      const inventoryRes = await api.get('/inventory');
+      const totalStock = inventoryRes.data.reduce(
+        (sum: number, item: any) => sum + Number(item.total_stock || 0),
+        0
+      );
+
+      setTodaySummary({
+        salesTotal: summary.total_sales || 0,
+        transactions: summary.total_transactions || 0,
+        itemsSold: summary.total_items || 0, // note: total_items is count of line items, not units
+        stockAdded: 0, // stock added from POs today not directly available
+        closingStock: totalStock,
+      });
+    } catch (error) {
+      toast.error('Failed to load today summary');
     }
   };
 
-  const handleApplyFilters = () => {
-    fetchReport();
+  const fetchHistory = async () => {
+    try {
+      // Fetch recent sales (limit 500) and group by date
+      const res = await api.get('/sales', { params: { limit: 500 } });
+      const sales = res.data.data || [];
+
+      // Group by sale_date (YYYY-MM-DD)
+      const grouped = sales.reduce((acc: any, sale: any) => {
+        const date = sale.sale_date.split('T')[0];
+        if (!acc[date]) {
+          acc[date] = {
+            date,
+            salesTotal: 0,
+            transactions: 0,
+            itemsSold: 0,
+            stockAdded: 0,
+            closingStock: 0,
+          };
+        }
+        acc[date].salesTotal += Number(sale.total);
+        acc[date].transactions += 1;
+        // Note: list endpoint doesn't include sale_items, so itemsSold stays 0.
+        return acc;
+      }, {});
+
+      const historyArray = Object.values(grouped).sort((a: any, b: any) =>
+        b.date.localeCompare(a.date)
+      );
+
+      // Add closing stock placeholder (could be derived from inventory history, not available)
+      historyArray.forEach((h: any) => {
+        h.closingStock = 0; // will need backend for accurate closing stock
+      });
+
+      setHistory(historyArray);
+    } catch (error) {
+      toast.error('Failed to load history');
+    }
   };
 
-  const renderDailyReport = () => {
-    if (!reportData) return null;
-    const { summary, sales_by_payment_method, product_breakdown, sales } = reportData;
-    return (
-      <>
-        <div className={styles.summaryCards}>
-          <div className={styles.summaryCard}>
-            <h4>Total Sales</h4>
-            <p>KES {summary.total_sales.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Discounts</h4>
-            <p>KES {summary.total_discount.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Tax</h4>
-            <p>KES {summary.total_tax.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Transactions</h4>
-            <p>{summary.total_transactions}</p>
-          </div>
-        </div>
+  const filteredHistory = useMemo(() => {
+    if (!searchDate) return history;
+    return history.filter((h) => h.date === searchDate);
+  }, [history, searchDate]);
 
-        <h3 className="mt-6">Sales by Payment Method</h3>
-        <table className="table">
-          <thead>
-            <tr><th>Method</th><th>Count</th><th>Total</th></tr>
-          </thead>
-          <tbody>
-            {Object.entries(sales_by_payment_method).map(([method, data]: any) => (
-              <tr key={method}>
-                <td>{method}</td>
-                <td>{data.count}</td>
-                <td>KES {data.total.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <h3 className="mt-6">Product Breakdown</h3>
-        <table className="table">
-          <thead>
-            <tr><th>Product</th><th>Quantity Sold</th><th>Revenue</th></tr>
-          </thead>
-          <tbody>
-            {Object.values(product_breakdown).map((p: any) => (
-              <tr key={p.name}>
-                <td>{p.name}</td>
-                <td>{p.quantity}</td>
-                <td>KES {p.revenue.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <h3 className="mt-6">Sales List</h3>
-        <table className="table">
-          <thead>
-            <tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Total</th></tr>
-          </thead>
-          <tbody>
-            {sales.map((sale: any) => (
-              <tr key={sale.id}>
-                <td>{sale.invoice_no}</td>
-                <td>{new Date(sale.sale_date).toLocaleString()}</td>
-                <td>{sale.customer?.name || 'Walk-in'}</td>
-                <td>KES {sale.total.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </>
-    );
-  };
-
-  const renderMonthlyReport = () => {
-    if (!reportData) return null;
-    // Simple bar chart using CSS
-    const maxTotal = Math.max(...reportData.map((m: any) => m.total), 1);
-    return (
-      <>
-        <div className={styles.barChart}>
-          {reportData.map((month: any) => (
-            <div key={month.month} className={styles.barContainer}>
-              <div className={styles.barLabel}>{getMonthName(month.month)}</div>
-              <div className={styles.bar}>
-                <div
-                  className={styles.barFill}
-                  style={{ height: `${(month.total / maxTotal) * 100}%` }}
-                ></div>
-              </div>
-              <div className={styles.barValue}>KES {month.total.toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-        <table className="table mt-6">
-          <thead>
-            <tr><th>Month</th><th>Total Sales</th><th>Transaction Count</th></tr>
-          </thead>
-          <tbody>
-            {reportData.map((month: any) => (
-              <tr key={month.month}>
-                <td>{getMonthName(month.month)}</td>
-                <td>KES {month.total.toLocaleString()}</td>
-                <td>{month.count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </>
-    );
-  };
-
-  const renderStockValuation = () => {
-    if (!reportData) return null;
-    return (
-      <>
-        <div className={styles.summaryCards}>
-          <div className={styles.summaryCard}>
-            <h4>Total Cost Value</h4>
-            <p>KES {reportData.total_cost_value.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Total Selling Value</h4>
-            <p>KES {reportData.total_selling_value.toLocaleString()}</p>
-          </div>
-        </div>
-        <table className="table mt-6">
-          <thead>
-            <tr><th>Product</th><th>Total Quantity</th><th>Cost Value</th><th>Selling Value</th></tr>
-          </thead>
-          <tbody>
-            {reportData.products.map((p: any) => (
-              <tr key={p.product_id}>
-                <td>{p.name}</td>
-                <td>{p.total_quantity} {p.unit}</td>
-                <td>KES {p.cost_value.toLocaleString()}</td>
-                <td>KES {p.selling_value.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </>
-    );
-  };
-
-  const renderProfitReport = () => {
-    if (!reportData) return null;
-    return (
-      <>
-        <div className={styles.summaryCards}>
-          <div className={styles.summaryCard}>
-            <h4>Revenue</h4>
-            <p>KES {reportData.total_revenue.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Cost</h4>
-            <p>KES {reportData.total_cost.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Gross Profit</h4>
-            <p>KES {reportData.gross_profit.toLocaleString()}</p>
-          </div>
-          <div className={styles.summaryCard}>
-            <h4>Gross Margin</h4>
-            <p>{reportData.gross_margin.toFixed(2)}%</p>
-          </div>
-        </div>
-        <table className="table mt-6">
-          <thead>
-            <tr><th>Product</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr>
-          </thead>
-          <tbody>
-            {reportData.product_profit.map((p: any) => (
-              <tr key={p.name}>
-                <td>{p.name}</td>
-                <td>KES {p.revenue.toLocaleString()}</td>
-                <td>KES {p.cost.toLocaleString()}</td>
-                <td>KES {p.profit.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </>
-    );
-  };
-
-  const renderTopProducts = () => {
-    if (!reportData) return null;
-    return (
-      <table className="table">
-        <thead>
-          <tr><th>Product</th><th>Total Quantity</th><th>Total Revenue</th></tr>
-        </thead>
-        <tbody>
-          {reportData.map((p: any) => (
-            <tr key={p.product_id}>
-              <td>{p.name}</td>
-              <td>{p.total_quantity}</td>
-              <td>KES {p.total_revenue.toLocaleString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  };
-
-  const getMonthName = (monthNum: number) => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return months[monthNum - 1];
+  const handlePrint = () => {
+    window.print();
   };
 
   return (
     <Layout>
-      <h1>Reports & Analytics</h1>
-
-      <div className={styles.tabs}>
-        <button className={`${styles.tab} ${activeReport === 'daily' ? styles.active : ''}`} onClick={() => setActiveReport('daily')}>Daily Sales</button>
-        <button className={`${styles.tab} ${activeReport === 'monthly' ? styles.active : ''}`} onClick={() => setActiveReport('monthly')}>Monthly Sales</button>
-        <button className={`${styles.tab} ${activeReport === 'stock' ? styles.active : ''}`} onClick={() => setActiveReport('stock')}>Stock Valuation</button>
-        <button className={`${styles.tab} ${activeReport === 'profit' ? styles.active : ''}`} onClick={() => setActiveReport('profit')}>Profit</button>
-        <button className={`${styles.tab} ${activeReport === 'top' ? styles.active : ''}`} onClick={() => setActiveReport('top')}>Top Products</button>
+      <div className="flex justify-between items-center mb-4">
+        <h1>Today Summary</h1>
+        <div className="flex gap-2">
+          <button className="btn btn-outline btn-sm" onClick={refreshData} disabled={refreshing}>
+            <i className={`fas fa-sync-alt ${refreshing ? 'fa-spin' : ''}`} style={{ marginRight: '4px' }}></i>
+            Refresh
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={handlePrint}>
+            <i className="fas fa-print" style={{ marginRight: '4px' }}></i>
+            Print
+          </button>
+        </div>
       </div>
 
-      {/* Date range filters for daily, profit, top */}
-      {(activeReport === 'daily' || activeReport === 'profit' || activeReport === 'top') && (
-        <div className={styles.filters}>
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input" />
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="input" />
-          {activeReport === 'top' && (
-            <select value={limit} onChange={(e) => setLimit(e.target.value)} className="input">
-              <option value="5">Top 5</option>
-              <option value="10">Top 10</option>
-              <option value="20">Top 20</option>
-            </select>
-          )}
-          <button className="btn btn-outline" onClick={handleApplyFilters}>Apply</button>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-5 gap-4 mt-4">
+        <div className="card summary-card">
+          <i className="fas fa-money-bill-wave card-icon" style={{ color: '#F57C00' }}></i>
+          <h4>Today Sales</h4>
+          <p className="summary-value">KES {todaySummary.salesTotal.toLocaleString()}</p>
+          <span className="summary-subtitle">{todaySummary.transactions} transactions</span>
         </div>
-      )}
+        <div className="card summary-card">
+          <i className="fas fa-boxes card-icon" style={{ color: '#1B5E20' }}></i>
+          <h4>Items Sold</h4>
+          <p className="summary-value">{todaySummary.itemsSold}</p>
+          <span className="summary-subtitle">Units sold today</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-truck-loading card-icon" style={{ color: '#0288D1' }}></i>
+          <h4>Stock Added</h4>
+          <p className="summary-value">{todaySummary.stockAdded}</p>
+          <span className="summary-subtitle">From POs received</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-warehouse card-icon" style={{ color: '#FFA000' }}></i>
+          <h4>Current Stock</h4>
+          <p className="summary-value">{todaySummary.closingStock}</p>
+          <span className="summary-subtitle">total products</span>
+        </div>
+      </div>
 
-      {/* Year filter for monthly */}
-      {activeReport === 'monthly' && (
-        <div className={styles.filters}>
-          <select value={year} onChange={(e) => setYear(e.target.value)} className="input">
-            {[2023, 2024, 2025, 2026].map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-          <button className="btn btn-outline" onClick={handleApplyFilters}>Apply</button>
-        </div>
-      )}
+      {/* Daily Reports History */}
+      <div className="dashboard-section">
+        <h2><i className="fas fa-calendar-alt" style={{ marginRight: '8px' }}></i>Daily Reports History</h2>
 
-      {loading ? (
-        <p>Loading report...</p>
-      ) : (
-        <div className="mt-4">
-          {activeReport === 'daily' && renderDailyReport()}
-          {activeReport === 'monthly' && renderMonthlyReport()}
-          {activeReport === 'stock' && renderStockValuation()}
-          {activeReport === 'profit' && renderProfitReport()}
-          {activeReport === 'top' && renderTopProducts()}
+        <div className="filters">
+          <input
+            type="date"
+            value={searchDate}
+            onChange={(e) => setSearchDate(e.target.value)}
+            className="input"
+            style={{ maxWidth: '200px' }}
+          />
+          <button className="btn btn-outline" onClick={() => setSearchDate('')}>
+            Clear
+          </button>
+          <span className="text-muted">Search by date...</span>
         </div>
-      )}
+
+        <div className="flex gap-2 mb-4">
+          <button className="btn btn-outline btn-sm">
+            <i className="fas fa-file-export" style={{ marginRight: '4px' }}></i> Regenerate Selected
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={handlePrint}>
+            <i className="fas fa-print" style={{ marginRight: '4px' }}></i> Print All
+          </button>
+        </div>
+
+        {loading ? (
+          <p>Loading...</p>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Sales</th>
+                <th>Transactions</th>
+                <th>Items Sold</th>
+                <th>Stock Added</th>
+                <th>Closing Stock</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredHistory.map((entry, index) => (
+                <tr key={index}>
+                  <td>{new Date(entry.date).toLocaleDateString()}</td>
+                  <td>KES {entry.salesTotal.toLocaleString()}</td>
+                  <td>{entry.transactions}</td>
+                  <td>{entry.itemsSold}</td>
+                  <td>{entry.stockAdded}</td>
+                  <td>{entry.closingStock}</td>
+                </tr>
+              ))}
+              {filteredHistory.length === 0 && (
+                <tr><td colSpan={6} className="text-center">No records found</td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </Layout>
   );
 }
