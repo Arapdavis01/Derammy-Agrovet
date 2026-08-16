@@ -5,7 +5,6 @@ import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import styles from '@/styles/Dashboard.module.css';
 
 export default function CashierDashboard() {
   const { user } = useAuth();
@@ -23,6 +22,7 @@ export default function CashierDashboard() {
       router.push('/admin/dashboard');
       return;
     }
+
     const date = new Date();
     setToday(date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
     fetchDashboard();
@@ -53,16 +53,17 @@ export default function CashierDashboard() {
 
   return (
     <Layout>
-      <div className={styles.welcome}>
+      <div className="welcome-heading">
         <h1>Welcome, {user?.fullName}!</h1>
-        <p>{today}</p>
+        <p><i className="fas fa-calendar-day" style={{ marginRight: '6px' }}></i>{today}</p>
       </div>
 
-      <button 
-        className="btn btn-primary" 
-        style={{ padding: '1rem 2rem', fontSize: '1.25rem', marginBottom: '2rem' }}
+      <button
+        className="btn btn-primary btn-lg"
+        style={{ marginBottom: '2rem', width: '100%', maxWidth: '400px' }}
         onClick={() => router.push('/cashier/pos')}
       >
+        <i className="fas fa-cash-register" style={{ marginRight: '8px' }}></i>
         START NEW SALE (POS)
       </button>
 
@@ -71,7 +72,7 @@ export default function CashierDashboard() {
           title="My Today Sales" 
           value={`KES ${myTodaySales.toLocaleString()}`} 
           subtitle={`${myTodayCount} transactions`}
-          icon="💰" 
+          icon="fa-money-bill-trend-up" 
           color="#F57C00"
           onClick={() => router.push('/cashier/sales')}
         />
@@ -79,7 +80,7 @@ export default function CashierDashboard() {
           title="My Total Sales" 
           value={`KES ${myTotalSales.toLocaleString()}`} 
           subtitle={`${myTotalCount} transactions`}
-          icon="📊" 
+          icon="fa-chart-line" 
           color="#1B5E20"
           onClick={() => router.push('/cashier/sales')}
         />
@@ -87,21 +88,21 @@ export default function CashierDashboard() {
           title="Available Products" 
           value={availableProducts.toString()} 
           subtitle={`${totalUnits} units in stock`}
-          icon="📦" 
+          icon="fa-boxes-stacked" 
           color="#4CAF50"
         />
         <Card 
           title="Outstanding Debt" 
           value={`KES ${outstandingDebt.toLocaleString()}`} 
           subtitle={`${outstandingCustomersCount} customers with debt`}
-          icon="📝" 
+          icon="fa-file-invoice-dollar" 
           color="#D32F2F"
           onClick={() => router.push('/cashier/credit')}
         />
       </div>
 
-      <div className={styles.section}>
-        <h2>Credit Customers with Debt</h2>
+      <div className="dashboard-section">
+        <h2><i className="fas fa-users" style={{ marginRight: '8px' }}></i>Credit Customers with Debt</h2>
         {creditCustomers.length > 0 ? (
           <table className="table mt-4">
             <thead>
@@ -124,12 +125,21 @@ export default function CashierDashboard() {
         )}
       </div>
 
-      <div className={styles.quickLinks}>
+      <div className="quick-links">
         <h2>Quick Links</h2>
         <div className="flex gap-4 mt-4">
-          <button className="btn btn-outline" onClick={() => router.push('/cashier/pos')}>New Sale</button>
-          <button className="btn btn-outline" onClick={() => router.push('/cashier/sales')}>My Sales</button>
-          <button className="btn btn-outline" onClick={() => router.push('/cashier/returns')}>Returns</button>
+          <button className="btn btn-outline" onClick={() => router.push('/cashier/pos')}>
+            <i className="fas fa-cash-register" style={{ marginRight: '6px' }}></i>
+            New Sale
+          </button>
+          <button className="btn btn-outline" onClick={() => router.push('/cashier/sales')}>
+            <i className="fas fa-receipt" style={{ marginRight: '6px' }}></i>
+            My Sales
+          </button>
+          <button className="btn btn-outline" onClick={() => router.push('/cashier/returns')}>
+            <i className="fas fa-rotate-left" style={{ marginRight: '6px' }}></i>
+            Returns
+          </button>
         </div>
       </div>
     </Layout>
