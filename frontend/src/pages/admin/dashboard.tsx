@@ -5,7 +5,6 @@ import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { useRouter } from 'next/router';
 import toast from 'react-hot-toast';
-import styles from '@/styles/Dashboard.module.css';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -55,7 +54,7 @@ export default function AdminDashboard() {
 
   return (
     <Layout>
-      <div className={styles.welcome}>
+      <div className="welcome-heading">
         <h1>Welcome back, {user?.fullName}</h1>
         <p>Here's what's happening in your agrovet today.</p>
       </div>
@@ -65,7 +64,7 @@ export default function AdminDashboard() {
           title="Inventory" 
           value={`KES ${stockValue.toLocaleString()}`} 
           subtitle={`${productsCount} items in stock | ${lowStockCount} low stock`}
-          icon="📦" 
+          icon="fa-boxes-stacked" 
           color="#1B5E20"
           onClick={() => router.push('/admin/inventory')}
         />
@@ -73,7 +72,7 @@ export default function AdminDashboard() {
           title="Sales" 
           value={`KES ${totalSales.toLocaleString()}`} 
           subtitle={`Today: KES ${todaySales.toLocaleString()} (${todaySalesCount} sales)`}
-          icon="💰" 
+          icon="fa-money-bill-trend-up" 
           color="#F57C00"
           onClick={() => router.push('/admin/sales')}
         />
@@ -81,7 +80,7 @@ export default function AdminDashboard() {
           title="Credit" 
           value={`KES ${creditOutstanding.toLocaleString()}`} 
           subtitle={`${creditCustomersCount} owing | Paid today: KES 0`}
-          icon="📝" 
+          icon="fa-file-invoice-dollar" 
           color="#0288D1"
           onClick={() => router.push('/admin/credit')}
         />
@@ -89,7 +88,7 @@ export default function AdminDashboard() {
           title="Returns/Exchanges" 
           value={returnsToday.toString()} 
           subtitle={`Today: ${returnsToday} returns | 0 exchanges`}
-          icon="↩️" 
+          icon="fa-rotate-left" 
           color="#D32F2F"
           onClick={() => router.push('/admin/returns')}
         />
@@ -100,7 +99,7 @@ export default function AdminDashboard() {
           title="Purchases" 
           value={`${purchasesCount} POs`} 
           subtitle={`Today: KES 0 | 0 active today`}
-          icon="🛒" 
+          icon="fa-cart-shopping" 
           color="#FFA000"
           onClick={() => router.push('/admin/purchases')}
         />
@@ -108,7 +107,7 @@ export default function AdminDashboard() {
           title="Products" 
           value={productsCount.toString()} 
           subtitle={`${lowStockCount} low stock | ${expiringSoonCount} expiring soon`}
-          icon="🏷️" 
+          icon="fa-tags" 
           color="#4CAF50"
           onClick={() => router.push('/admin/products')}
         />
@@ -116,7 +115,7 @@ export default function AdminDashboard() {
           title="Reports" 
           value="Analytics" 
           subtitle="View analytics & reports"
-          icon="📈" 
+          icon="fa-chart-line" 
           color="#9C27B0"
           onClick={() => router.push('/admin/reports')}
         />
@@ -124,20 +123,19 @@ export default function AdminDashboard() {
           title="Top Products Today" 
           value={topProductsToday.length > 0 ? topProductsToday[0]?.name : 'No sales yet'} 
           subtitle={topProductsToday.length > 0 ? `Quantity: ${topProductsToday[0]?.quantity}` : ''}
-          icon="⭐" 
+          icon="fa-star" 
           color="#607D8B"
           onClick={() => router.push('/admin/reports')}
         />
       </div>
 
-      <div className={styles.section}>
-        <h2>Cashier Performance</h2>
+      <div className="dashboard-section">
+        <h2><i className="fas fa-users" style={{ marginRight: '8px' }}></i>Cashier Performance</h2>
         {cashierPerformance.length > 0 ? (
           <table className="table mt-4">
             <thead>
               <tr>
                 <th>Cashier</th>
-                <th>Username</th>
                 <th>Today Sales</th>
                 <th>Today Count</th>
                 <th>Total Sales</th>
@@ -148,7 +146,6 @@ export default function AdminDashboard() {
               {cashierPerformance.map((c: any) => (
                 <tr key={c.user_id}>
                   <td>{c.full_name}</td>
-                  <td>{c.username || '-'}</td>
                   <td>KES {c.today_sales.toLocaleString()}</td>
                   <td>{c.today_count} sales</td>
                   <td>KES {c.total_sales.toLocaleString()}</td>
@@ -162,8 +159,8 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <div className={styles.section}>
-        <h2>Credit Customers</h2>
+      <div className="dashboard-section">
+        <h2><i className="fas fa-file-invoice-dollar" style={{ marginRight: '8px' }}></i>Credit Customers</h2>
         {creditCustomers.length > 0 ? (
           <table className="table mt-4">
             <thead>
