@@ -9,11 +9,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!user) return null;
 
   return (
-    <div className="flex" style={{ minHeight: '100vh' }}>
+    <div className="layout">
       <Sidebar role={user.role} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div className="layout-main">
         <Topbar user={user} />
-        <main style={{ padding: '2rem', flex: 1, overflowY: 'auto' }}>
+        <main className="layout-content">
           {children}
         </main>
       </div>
