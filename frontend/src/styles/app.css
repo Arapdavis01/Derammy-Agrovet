@@ -652,8 +652,27 @@ label {
 }
 
 .pos-left h2,
-.pos-right h3 {
+.pos-right h3,
+.pos-right h4 {
   margin-bottom: var(--space-4);
+}
+
+.pos-search-wrapper {
+  position: relative;
+  margin-bottom: var(--space-3);
+}
+
+.pos-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--gray-500);
+  pointer-events: none;
+}
+
+.pos-search-input {
+  padding-left: 32px;
 }
 
 .pos-search-results {
@@ -669,15 +688,52 @@ label {
   cursor: pointer;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   border-bottom: 1px solid var(--gray-200);
+  gap: var(--space-2);
 }
 
 .pos-search-item:hover {
   background: var(--gray-100);
 }
 
-.pos-cart {
+.pos-product-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pos-product-name {
+  font-weight: 600;
+}
+
+.pos-product-stock {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.pos-product-price {
+  white-space: nowrap;
+  font-weight: bold;
+  color: var(--primary);
+}
+
+.pos-credit-badge {
+  background: var(--danger-light);
+  color: var(--danger);
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.pos-cart-items {
   margin-top: var(--space-4);
+}
+
+.pos-cart-items h3 {
+  margin-bottom: var(--space-2);
 }
 
 .pos-qty-input {
@@ -698,6 +754,7 @@ label {
   display: flex;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .pos-payment-method {
@@ -705,6 +762,14 @@ label {
   border: 1px solid var(--gray-300);
   border-radius: var(--border-radius-md);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.pos-payment-method input {
+  display: none;
 }
 
 .pos-payment-method.selected {
@@ -720,10 +785,36 @@ label {
   margin-bottom: var(--space-4);
 }
 
+.pos-totals p {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-1);
+}
+
+.pos-total-input {
+  width: 80px;
+  display: inline-block;
+  margin-left: var(--space-2);
+}
+
+.pos-grand-total {
+  font-size: var(--font-size-lg);
+  border-top: 1px solid var(--gray-300);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+}
+
 .pos-complete-btn {
   width: 100%;
   padding: 1rem;
   font-size: 1.2rem;
+}
+
+.pos-held-count {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  align-self: center;
 }
 
 @media (max-width: 768px) {
