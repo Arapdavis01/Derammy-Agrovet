@@ -27,8 +27,14 @@ export const login = async (req: Request, res: Response) => {
     throw new AppError('Account is deactivated. Contact administrator.', 403);
   }
 
+  // Check if password_hash exists, else invalid
+  const passwordHash = userRecord.password_hash || '';
+  if (!passwordHash) {
+    throw new AppError('Invalid credentials', 401);
+  }
+
   // Compare password with stored hash
-  const validPassword = await bcrypt.compare(password, userRecord.password_hash || '');
+  const validPassword = await bcrypt.compare(password, passwordHash);
   if (!validPassword) {
     throw new AppError('Invalid credentials', 401);
   }
