@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // List all categories
 export const listCategories = async (req: Request, res: Response) => {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('categories')
     .select('*')
     .order('name', { ascending: true });
@@ -21,7 +21,7 @@ export const createCategory = async (req: Request, res: Response) => {
   }
 
   // Check if category already exists
-  const { data: existing } = await supabase
+  const { data: existing } = await supabaseAdmin
     .from('categories')
     .select('id')
     .ilike('name', name.trim())
@@ -31,7 +31,7 @@ export const createCategory = async (req: Request, res: Response) => {
     throw new AppError('Category already exists', 409);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('categories')
     .insert({ name: name.trim() })
     .select()
@@ -49,7 +49,7 @@ export const updateCategory = async (req: Request, res: Response) => {
     throw new AppError('Category name is required', 400);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('categories')
     .update({ name: name.trim() })
     .eq('id', id)
@@ -63,7 +63,7 @@ export const updateCategory = async (req: Request, res: Response) => {
 // Delete category
 export const deleteCategory = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('categories')
     .delete()
     .eq('id', id);
