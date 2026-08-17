@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 import { reduceStock, addStock } from '../services/stock.service';
 
@@ -7,7 +7,7 @@ import { reduceStock, addStock } from '../services/stock.service';
 const generateInvoiceNo = async (): Promise<string> => {
   const date = new Date();
   const dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-  const { count, error } = await supabase
+  const { count, error } = await supabaseAdmin
     .from('sales')
     .select('id', { count: 'exact', head: true })
     .gte('sale_date', `${dateStr}T00:00:00Z`)
@@ -22,9 +22,9 @@ const generateInvoiceNo = async (): Promise<string> => {
 export const createSale = async (req: Request, res: Response) => {
   const {
     customer_id,
-    items, // [{ product_id, quantity, unit_price?, discount?, batch_id? }]
-    payment_method, // 'cash', 'mpesa', 'credit', 'mixed'
-    payments, // for mixed: [{ method, amount, reference? }]
+    items,
+    payment_method,
+    payments,
     discount = 0,
     tax = 0,
     sale_status = 'completed',
@@ -47,7 +47,7 @@ export const createSale = async (req: Request, res: Response) => {
 
     let price = unit_price;
     if (!price) {
-      const { data: product } = await supabase
+      const { data: product } = await supabaseAdmin
         .from('products')
         .select('selling_price')
         .eq('id', product_id)
@@ -104,7 +104,7 @@ export const createSale = async (req: Request, res: Response) => {
   // Check customer credit limit for credit or mixed payments with credit component
   if (payment_method === 'credit' || (payment_method === 'mixed' && payments.some((p: any) => p.method === 'credit'))) {
     if (!customer_id) throw new AppError('Customer required for credit transactions', 400);
-    const { data: customer } = await supabase
+    const { data: customer } = await supabaseAdmin
       .from('customers')
       .select('credit_limit, credit_balance')
       .eq('id', customer_id)
@@ -122,7 +122,7 @@ export const createSale = async (req: Request, res: Response) => {
   const invoice_no = await generateInvoiceNo();
 
   // Insert sale record
-  const { data: sale, error: saleError } = await supabase
+  const { data: sale, error: saleError } = await supabaseAdmin
     .from('sales')
     .insert({
       invoice_no,
@@ -145,7 +145,7 @@ export const createSale = async (req: Request, res: Response) => {
 
   // Insert sale items and reduce stock
   for (const item of saleItemsData) {
-    const { error: itemError } = await supabase
+    const { error: itemError } = await supabaseAdmin
       .from('sale_items')
       .insert({
         sale_id: sale.id,
@@ -158,14 +158,14 @@ export const createSale = async (req: Request, res: Response) => {
       });
 
     if (itemError) {
-      await supabase.from('sales').delete().eq('id', sale.id);
+      await supabaseAdmin.from('sales').delete().eq('id', sale.id);
       throw new AppError('Failed to insert sale items', 500);
     }
 
     try {
       await reduceStock(item.product_id, item.quantity, item.batch_id, userId, sale.id);
     } catch (e: any) {
-      await supabase.from('sales').delete().eq('id', sale.id);
+      await supabaseAdmin.from('sales').delete().eq('id', sale.id);
       throw e;
     }
   }
@@ -173,7 +173,7 @@ export const createSale = async (req: Request, res: Response) => {
   // Insert payments
   if (payment_method === 'mixed') {
     for (const p of payments) {
-      await supabase.from('payments').insert({
+      await supabaseAdmin.from('payments').insert({
         sale_id: sale.id,
         customer_id: customer_id || null,
         amount: p.amount,
@@ -182,7 +182,7 @@ export const createSale = async (req: Request, res: Response) => {
       });
     }
   } else if (payment_method !== 'credit') {
-    await supabase.from('payments').insert({
+    await supabaseAdmin.from('payments').insert({
       sale_id: sale.id,
       customer_id: customer_id || null,
       amount: total,
@@ -197,20 +197,20 @@ export const createSale = async (req: Request, res: Response) => {
       ? payments.filter((p: any) => p.method === 'credit').reduce((sum: number, p: any) => sum + Number(p.amount), 0)
       : total;
     if (customer_id) {
-      const { data: customer } = await supabase
+      const { data: customer } = await supabaseAdmin
         .from('customers')
         .select('credit_balance')
         .eq('id', customer_id)
         .single();
       if (customer) {
         const newBalance = Number(customer.credit_balance) + creditAmount;
-        await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', customer_id);
+        await supabaseAdmin.from('customers').update({ credit_balance: newBalance }).eq('id', customer_id);
       }
     }
   }
 
   // Fetch complete sale with items
-  const { data: fullSale, error: fetchError } = await supabase
+  const { data: fullSale, error: fetchError } = await supabaseAdmin
     .from('sales')
     .select(`
       *,
@@ -246,7 +246,7 @@ export const listSales = async (req: Request, res: Response) => {
   const limitNum = parseInt(String(limit));
   const offset = (pageNum - 1) * limitNum;
 
-  let query = supabase
+  let query = supabaseAdmin
     .from('sales')
     .select(`
       id, invoice_no, customer_id, user_id, sale_date, subtotal, discount, tax, total, amount_paid, payment_status, sale_status, payment_method,
@@ -278,7 +278,7 @@ export const listSales = async (req: Request, res: Response) => {
 // Get sale details
 export const getSale = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sales')
     .select(`
       *,
@@ -303,7 +303,7 @@ export const voidSale = async (req: Request, res: Response) => {
   const { id } = req.params;
   const userId = (req as any).user.id;
 
-  const { data: sale, error: fetchError } = await supabase
+  const { data: sale, error: fetchError } = await supabaseAdmin
     .from('sales')
     .select('*')
     .eq('id', id)
@@ -314,7 +314,7 @@ export const voidSale = async (req: Request, res: Response) => {
   if (sale.sale_status === 'refunded') throw new AppError('Sale already refunded', 400);
 
   // Restock items
-  const { data: items } = await supabase
+  const { data: items } = await supabaseAdmin
     .from('sale_items')
     .select('*')
     .eq('sale_id', id);
@@ -338,19 +338,19 @@ export const voidSale = async (req: Request, res: Response) => {
   if (sale.payment_status === 'credit' || sale.payment_method === 'mixed') {
     if (sale.customer_id) {
       const creditAmount = sale.total - sale.amount_paid;
-      const { data: customer } = await supabase
+      const { data: customer } = await supabaseAdmin
         .from('customers')
         .select('credit_balance')
         .eq('id', sale.customer_id)
         .single();
       if (customer) {
         const newBalance = Number(customer.credit_balance) - creditAmount;
-        await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', sale.customer_id);
+        await supabaseAdmin.from('customers').update({ credit_balance: newBalance }).eq('id', sale.customer_id);
       }
     }
   }
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await supabaseAdmin
     .from('sales')
     .update({ sale_status: 'voided' })
     .eq('id', id);
