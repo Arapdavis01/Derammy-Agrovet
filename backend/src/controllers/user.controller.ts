@@ -1,12 +1,12 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // List all users (admin only)
 export const listUsers = async (req: Request, res: Response) => {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('users')
     .select('id, full_name, username, email, role, status, created_at')
     .order('created_at', { ascending: false });
@@ -29,7 +29,7 @@ export const createUser = async (req: Request, res: Response) => {
   }
 
   // Check if username already exists
-  const { data: existing } = await supabase
+  const { data: existing } = await supabaseAdmin
     .from('users')
     .select('id')
     .eq('username', username)
@@ -44,7 +44,7 @@ export const createUser = async (req: Request, res: Response) => {
   // Generate email from username (for display/record only)
   const email = `${username.toLowerCase()}@derammy.agrovet`;
 
-  const { data: newUser, error } = await supabase
+  const { data: newUser, error } = await supabaseAdmin
     .from('users')
     .insert({
       id: uuidv4(),
@@ -77,7 +77,7 @@ export const updateUser = async (req: Request, res: Response) => {
   if (status) updates.status = status;
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('users')
     .update(updates)
     .eq('id', id)
@@ -99,7 +99,7 @@ export const resetPassword = async (req: Request, res: Response) => {
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(newPassword, salt);
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('users')
     .update({ password_hash: passwordHash })
     .eq('id', id);
@@ -111,7 +111,7 @@ export const resetPassword = async (req: Request, res: Response) => {
 // Deactivate user (soft delete)
 export const deactivateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('users')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('id', id)
