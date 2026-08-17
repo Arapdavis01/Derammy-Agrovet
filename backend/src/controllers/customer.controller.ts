@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // List customers with optional search and pagination
@@ -9,7 +9,7 @@ export const listCustomers = async (req: Request, res: Response) => {
   const limitNum = parseInt(limit);
   const offset = (pageNum - 1) * limitNum;
 
-  let query = supabase
+  let query = supabaseAdmin
     .from('customers')
     .select('*', { count: 'exact' })
     .order('name')
@@ -33,7 +33,7 @@ export const listCustomers = async (req: Request, res: Response) => {
 // Get single customer
 export const getCustomer = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('customers')
     .select('*')
     .eq('id', id)
@@ -47,7 +47,7 @@ export const createCustomer = async (req: Request, res: Response) => {
   const { name, phone, address, credit_limit = 0 } = req.body;
   if (!name) throw new AppError('Customer name is required', 400);
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('customers')
     .insert({
       name,
@@ -77,7 +77,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     throw new AppError('No valid fields to update', 400);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('customers')
     .update(updates)
     .eq('id', id)
@@ -92,7 +92,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
 export const deleteCustomer = async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  const { data: customer } = await supabase
+  const { data: customer } = await supabaseAdmin
     .from('customers')
     .select('credit_balance')
     .eq('id', id)
@@ -104,7 +104,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
   }
 
   // Check if customer has sales
-  const { count } = await supabase
+  const { count } = await supabaseAdmin
     .from('sales')
     .select('id', { count: 'exact', head: true })
     .eq('customer_id', id);
@@ -113,7 +113,11 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     throw new AppError('Cannot delete customer with sales history', 400);
   }
 
-  const { error } = await supabase.from('customers').delete().eq('id', id);
+  const { error } = await supabaseAdmin
+    .from('customers')
+    .delete()
+    .eq('id', id);
+
   if (error) throw new AppError('Failed to delete customer', 500);
   res.json({ message: 'Customer deleted' });
 };
