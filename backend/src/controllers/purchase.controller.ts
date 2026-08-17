@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 import { addStock } from '../services/stock.service';
 
@@ -29,7 +29,7 @@ export const createPurchase = async (req: Request, res: Response) => {
     let price = cost_price;
     if (!price) {
       // Fetch product cost price
-      const { data: product } = await supabase
+      const { data: product } = await supabaseAdmin
         .from('products')
         .select('cost_price')
         .eq('id', product_id)
@@ -51,7 +51,7 @@ export const createPurchase = async (req: Request, res: Response) => {
   }
 
   // Insert purchase record
-  const { data: purchase, error: purchaseError } = await supabase
+  const { data: purchase, error: purchaseError } = await supabaseAdmin
     .from('purchases')
     .insert({
       supplier_id,
@@ -67,7 +67,7 @@ export const createPurchase = async (req: Request, res: Response) => {
   // Process each item: insert purchase item and add stock
   for (const item of purchaseItemsData) {
     // Insert purchase item
-    const { error: itemError } = await supabase
+    const { error: itemError } = await supabaseAdmin
       .from('purchase_items')
       .insert({
         purchase_id: purchase.id,
@@ -79,7 +79,7 @@ export const createPurchase = async (req: Request, res: Response) => {
 
     if (itemError) {
       // Rollback purchase
-      await supabase.from('purchases').delete().eq('id', purchase.id);
+      await supabaseAdmin.from('purchases').delete().eq('id', purchase.id);
       throw new AppError('Failed to insert purchase item', 500);
     }
 
@@ -96,13 +96,13 @@ export const createPurchase = async (req: Request, res: Response) => {
         purchase.id
       );
     } catch (e: any) {
-      await supabase.from('purchases').delete().eq('id', purchase.id);
+      await supabaseAdmin.from('purchases').delete().eq('id', purchase.id);
       throw e;
     }
   }
 
   // Fetch complete purchase
-  const { data: fullPurchase, error: fetchError } = await supabase
+  const { data: fullPurchase, error: fetchError } = await supabaseAdmin
     .from('purchases')
     .select(`
       *,
@@ -126,7 +126,7 @@ export const listPurchases = async (req: Request, res: Response) => {
   const limitNum = parseInt(limit);
   const offset = (pageNum - 1) * limitNum;
 
-  let query = supabase
+  let query = supabaseAdmin
     .from('purchases')
     .select(`
       id, supplier_id, purchase_date, total, status, user_id,
@@ -149,7 +149,7 @@ export const listPurchases = async (req: Request, res: Response) => {
 // Get purchase details
 export const getPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('purchases')
     .select(`
       *,
