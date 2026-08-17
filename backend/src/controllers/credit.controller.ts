@@ -174,6 +174,28 @@ export const getCreditAging = async (req: Request, res: Response) => {
       bucket,
     });
   }
+// List recent payments (admin/manager)
+export const listPayments = async (req: Request, res: Response) => {
+  const { limit = 10, offset = 0 } = req.query as any;
+  const limitNum = parseInt(limit) || 10;
+  const offsetNum = parseInt(offset) || 0;
 
+  const { data, error } = await supabase
+    .from('payments')
+    .select(`
+      id,
+      amount,
+      payment_method,
+      reference,
+      payment_date,
+      customer:customers(id, name),
+      user:users(id, full_name)
+    `)
+    .order('payment_date', { ascending: false })
+    .range(offsetNum, offsetNum + limitNum - 1);
+
+  if (error) throw new AppError('Failed to fetch payments', 500);
+  res.json({ data, total: data.length });
+};
   res.json(agingData);
 };
