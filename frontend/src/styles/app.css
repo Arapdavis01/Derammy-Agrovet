@@ -133,20 +133,39 @@ a {
 .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-cols-5 { grid-template-columns: repeat(5, 1fr); }
 
 @media (max-width: 768px) {
   .grid-cols-2,
   .grid-cols-3,
-  .grid-cols-4 {
+  .grid-cols-4,
+  .grid-cols-5 {
     grid-template-columns: 1fr;
   }
 }
 
 .text-center { text-align: center; }
 .text-right { text-align: right; }
+
+.text-muted {
+  color: var(--text-secondary) !important;
+}
+
+.font-weight-bold {
+  font-weight: 600;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.mt-1 { margin-top: var(--space-1); }
 .mt-2 { margin-top: var(--space-2); }
 .mt-4 { margin-top: var(--space-4); }
 .mt-6 { margin-top: var(--space-6); }
+.mt-8 { margin-top: var(--space-8); }
+
+.mb-1 { margin-bottom: var(--space-1); }
 .mb-2 { margin-bottom: var(--space-2); }
 .mb-4 { margin-bottom: var(--space-4); }
 .mb-6 { margin-bottom: var(--space-6); }
@@ -335,7 +354,7 @@ label {
   margin-top: var(--space-1);
 }
 
-/* Summary Card (centered, used on Inventory dashboard) */
+/* Summary Card (centered, used on Inventory, Credit, Reports) */
 .summary-card {
   text-align: center;
   cursor: pointer;
@@ -364,6 +383,7 @@ label {
   color: var(--text-secondary);
   margin-top: var(--space-1);
 }
+
 /* ---------- Alerts ---------- */
 .alert {
   padding: var(--space-3);
@@ -428,6 +448,7 @@ label {
 .modal h3 {
   margin-bottom: var(--space-4);
 }
+
 /* ============================================
    LAYOUT – SIDEBAR & TOPBAR
    ============================================ */
@@ -436,11 +457,12 @@ label {
   display: flex;
   min-height: 100vh;
 }
+
 .layout-main {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0; /* prevents overflow */
+  min-width: 0;
 }
 
 .layout-content {
@@ -448,6 +470,7 @@ label {
   flex: 1;
   overflow-y: auto;
 }
+
 .sidebar {
   width: 250px;
   background: var(--bg-sidebar);
@@ -971,26 +994,6 @@ label {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--space-4);
-}
-
-.summary-card {
-  background: var(--bg-card);
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--box-shadow-sm);
-  padding: var(--space-5);
-  text-align: center;
-}
-
-.summary-card h4 {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  margin-bottom: var(--space-2);
-}
-
-.summary-card p {
-  font-size: var(--font-size-2xl);
-  font-weight: bold;
-  color: var(--text-primary);
 }
 
 /* Monthly Bar Chart */
