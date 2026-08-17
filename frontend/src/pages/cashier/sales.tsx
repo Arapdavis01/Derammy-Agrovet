@@ -5,6 +5,13 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
 
+interface Summary {
+  my_today_sales: number;
+  my_today_count: number;
+  my_total_sales: number;
+  my_total_count: number;
+}
+
 export default function CashierSales() {
   const { user } = useAuth();
   const router = useRouter();
@@ -19,6 +26,12 @@ export default function CashierSales() {
     payment_method: '',
   });
   const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [summary, setSummary] = useState<Summary>({
+    my_today_sales: 0,
+    my_today_count: 0,
+    my_total_sales: 0,
+    my_total_count: 0,
+  });
 
   useEffect(() => {
     if (!user) {
@@ -29,8 +42,18 @@ export default function CashierSales() {
       router.push('/admin/dashboard');
       return;
     }
+    fetchSummary();
     fetchSales();
   }, [user, page, filters]);
+
+  const fetchSummary = async () => {
+    try {
+      const res = await api.get('/dashboard/cashier');
+      setSummary(res.data);
+    } catch (error) {
+      // Silent fail; summary cards show zeros
+    }
+  };
 
   const fetchSales = async () => {
     setLoading(true);
@@ -59,17 +82,48 @@ export default function CashierSales() {
     }
   };
 
+  const avgTransaction =
+    summary.my_total_count > 0 ? summary.my_total_sales / summary.my_total_count : 0;
+
   const totalPages = Math.ceil(totalSales / limit);
 
   return (
     <Layout>
-      <h1>
-        <i className="fas fa-receipt" style={{ marginRight: '8px' }}></i>
-        My Sales
-      </h1>
+      <div className="welcome-heading">
+        <h1>My Sales</h1>
+        <p>Your personal sales performance.</p>
+      </div>
+
+      {/* Personal Summary Cards */}
+      <div className="grid grid-cols-4 gap-4 mt-4">
+        <div className="card summary-card">
+          <i className="fas fa-money-bill-wave card-icon" style={{ color: '#F57C00' }}></i>
+          <h4>Today Sales</h4>
+          <p className="summary-value">KES {summary.my_today_sales.toLocaleString()}</p>
+          <span className="summary-subtitle">{summary.my_today_count} transactions</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-receipt card-icon" style={{ color: '#0288D1' }}></i>
+          <h4>Today Transactions</h4>
+          <p className="summary-value">{summary.my_today_count}</p>
+          <span className="summary-subtitle">Today</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-chart-line card-icon" style={{ color: '#1B5E20' }}></i>
+          <h4>Total Sales</h4>
+          <p className="summary-value">KES {summary.my_total_sales.toLocaleString()}</p>
+          <span className="summary-subtitle">{summary.my_total_count} total transactions</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-calculator card-icon" style={{ color: '#4CAF50' }}></i>
+          <h4>Avg. Transaction</h4>
+          <p className="summary-value">KES {avgTransaction.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+          <span className="summary-subtitle">Per sale</span>
+        </div>
+      </div>
 
       {/* Filters */}
-      <div className="filters">
+      <div className="filters mt-6">
         <input
           type="date"
           value={filters.start_date}
@@ -93,17 +147,25 @@ export default function CashierSales() {
           <option value="credit">Credit</option>
           <option value="mixed">Mixed</option>
         </select>
-        <button className="btn btn-outline" onClick={() => { setPage(1); fetchSales(); }}>
+        <button
+          className="btn btn-outline"
+          onClick={() => {
+            setPage(1);
+            fetchSales();
+          }}
+        >
           <i className="fas fa-filter" style={{ marginRight: '4px' }}></i> Apply
         </button>
       </div>
 
+      {/* Sales Table */}
       <table className="table mt-4">
         <thead>
           <tr>
             <th>Invoice</th>
             <th>Date</th>
             <th>Customer</th>
+            <th>Items</th>
             <th>Total</th>
             <th>Payment</th>
             <th>Status</th>
@@ -111,27 +173,57 @@ export default function CashierSales() {
           </tr>
         </thead>
         <tbody>
-          {sales.map((sale) => (
-            <tr key={sale.id}>
-              <td>{sale.invoice_no}</td>
-              <td>{new Date(sale.sale_date).toLocaleString()}</td>
-              <td>{sale.customer?.name || 'Walk-in'}</td>
-              <td>KES {sale.total.toLocaleString()}</td>
-              <td>{sale.payment_method}</td>
-              <td>
-                <span className={`status ${sale.sale_status}`}>
-                  {sale.sale_status}
-                </span>
-              </td>
-              <td>
-                <button className="btn btn-sm btn-outline" onClick={() => fetchSaleDetail(sale.id)}>
-                  <i className="fas fa-eye"></i> View
-                </button>
+          {sales.map((sale) => {
+            // Build items preview (first 2 items)
+            const itemsPreview = sale.sale_items
+              ? sale.sale_items
+                  .slice(0, 2)
+                  .map(
+                    (item: any) =>
+                      `${item.product.name} ×${item.quantity} ${item.product.unit}`
+                  )
+                  .join(', ')
+              : '';
+            const moreCount = sale.sale_items ? sale.sale_items.length - 2 : 0;
+
+            return (
+              <tr key={sale.id}>
+                <td><strong>{sale.invoice_no}</strong></td>
+                <td>{new Date(sale.sale_date).toLocaleString()}</td>
+                <td>
+                  {sale.customer?.name || 'Walk-in'}
+                  {sale.payment_status === 'credit' && (
+                    <span className="badge" style={{ marginLeft: '6px' }}>CREDIT</span>
+                  )}
+                </td>
+                <td>
+                  {itemsPreview}
+                  {moreCount > 0 && <span className="text-muted"> +{moreCount} more</span>}
+                </td>
+                <td><strong>KES {sale.total.toLocaleString()}</strong></td>
+                <td>{sale.payment_method.toUpperCase()}</td>
+                <td>
+                  <span className={`status ${sale.sale_status}`}>
+                    {sale.sale_status}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    onClick={() => fetchSaleDetail(sale.id)}
+                  >
+                    <i className="fas fa-eye"></i> View
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+          {sales.length === 0 && (
+            <tr>
+              <td colSpan={8} className="text-center">
+                No sales found
               </td>
             </tr>
-          ))}
-          {sales.length === 0 && (
-            <tr><td colSpan={7} className="text-center">No sales found</td></tr>
           )}
         </tbody>
       </table>
@@ -139,9 +231,21 @@ export default function CashierSales() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-between mt-4">
-          <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={page <= 1}
+            onClick={() => setPage(page - 1)}
+          >
+            Previous
+          </button>
           <span>Page {page} of {totalPages}</span>
-          <button className="btn btn-outline btn-sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
+          <button
+            className="btn btn-outline btn-sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage(page + 1)}
+          >
+            Next
+          </button>
         </div>
       )}
 
@@ -157,7 +261,12 @@ export default function CashierSales() {
             <h4>Items</h4>
             <table className="table">
               <thead>
-                <tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
+                <tr>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Unit Price</th>
+                  <th>Total</th>
+                </tr>
               </thead>
               <tbody>
                 {selectedSale.sale_items.map((item: any) => (
@@ -170,7 +279,9 @@ export default function CashierSales() {
                 ))}
               </tbody>
             </table>
-            <button className="btn btn-outline" onClick={() => setSelectedSale(null)}>Close</button>
+            <button className="btn btn-outline" onClick={() => setSelectedSale(null)}>
+              Close
+            </button>
           </div>
         </div>
       )}
