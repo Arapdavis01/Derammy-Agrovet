@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 export const listSuppliers = async (req: Request, res: Response) => {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('suppliers')
     .select('*')
     .order('name');
@@ -16,7 +16,7 @@ export const createSupplier = async (req: Request, res: Response) => {
   const { name, phone, address } = req.body;
   if (!name) throw new AppError('Supplier name is required', 400);
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('suppliers')
     .insert({ name, phone, address })
     .select()
@@ -34,7 +34,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
   if (phone) updates.phone = phone;
   if (address) updates.address = address;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('suppliers')
     .update(updates)
     .eq('id', id)
@@ -47,7 +47,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
 
 export const deleteSupplier = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('suppliers')
     .delete()
     .eq('id', id);
