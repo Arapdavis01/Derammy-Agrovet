@@ -59,13 +59,11 @@ export default function AdminReports() {
 
   const fetchTodaySummary = async () => {
     try {
-      // Today's sales
       const salesRes = await api.get('/reports/daily-sales', {
         params: { start_date: today, end_date: today },
       });
       const summary = salesRes.data.summary;
 
-      // Current stock value (total units)
       const inventoryRes = await api.get('/inventory');
       const totalStock = inventoryRes.data.reduce(
         (sum: number, item: any) => sum + Number(item.total_stock || 0),
@@ -75,8 +73,8 @@ export default function AdminReports() {
       setTodaySummary({
         salesTotal: summary.total_sales || 0,
         transactions: summary.total_transactions || 0,
-        itemsSold: summary.total_items || 0, // note: total_items is count of line items, not units
-        stockAdded: 0, // stock added from POs today not directly available
+        itemsSold: summary.total_items || 0,
+        stockAdded: 0,
         closingStock: totalStock,
       });
     } catch (error) {
@@ -86,11 +84,9 @@ export default function AdminReports() {
 
   const fetchHistory = async () => {
     try {
-      // Fetch recent sales (limit 500) and group by date
       const res = await api.get('/sales', { params: { limit: 500 } });
       const sales = res.data.data || [];
 
-      // Group by sale_date (YYYY-MM-DD)
       const grouped = sales.reduce((acc: any, sale: any) => {
         const date = sale.sale_date.split('T')[0];
         if (!acc[date]) {
@@ -105,17 +101,16 @@ export default function AdminReports() {
         }
         acc[date].salesTotal += Number(sale.total);
         acc[date].transactions += 1;
-        // Note: list endpoint doesn't include sale_items, so itemsSold stays 0.
         return acc;
       }, {});
 
-      const historyArray = Object.values(grouped).sort((a: any, b: any) =>
+      // Explicitly type as DailySummary[]
+      const historyArray: DailySummary[] = Object.values(grouped).sort((a: any, b: any) =>
         b.date.localeCompare(a.date)
       );
 
-      // Add closing stock placeholder (could be derived from inventory history, not available)
-      historyArray.forEach((h: any) => {
-        h.closingStock = 0; // will need backend for accurate closing stock
+      historyArray.forEach((h: DailySummary) => {
+        h.closingStock = 0; // placeholder
       });
 
       setHistory(historyArray);
