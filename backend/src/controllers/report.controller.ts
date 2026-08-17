@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // Daily sales report
@@ -8,7 +8,7 @@ export const dailySalesReport = async (req: Request, res: Response) => {
   const end_date = String(req.query.end_date || '');
   if (!start_date || !end_date) throw new AppError('start_date and end_date are required', 400);
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sales')
     .select(`
       id, invoice_no, sale_date, subtotal, discount, tax, total, payment_method, payment_status, sale_status,
@@ -81,7 +81,7 @@ export const monthlySalesReport = async (req: Request, res: Response) => {
   const startDate = `${currentYear}-01-01`;
   const endDate = `${currentYear}-12-31`;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sales')
     .select('sale_date, total, payment_method')
     .gte('sale_date', startDate)
@@ -107,7 +107,7 @@ export const monthlySalesReport = async (req: Request, res: Response) => {
 
 // Stock valuation report
 export const stockValuationReport = async (req: Request, res: Response) => {
-  const { data: products, error } = await supabase
+  const { data: products, error } = await supabaseAdmin
     .from('products')
     .select(`
       id, name, sku, unit, cost_price, selling_price,
@@ -154,7 +154,7 @@ export const profitReport = async (req: Request, res: Response) => {
   const end_date = String(req.query.end_date || '');
   if (!start_date || !end_date) throw new AppError('start_date and end_date are required', 400);
 
-  const { data: saleItems, error } = await supabase
+  const { data: saleItems, error } = await supabaseAdmin
     .from('sale_items')
     .select(`
       id, sale_id, product_id, quantity, unit_price, discount, total,
@@ -212,7 +212,7 @@ export const topSellingProducts = async (req: Request, res: Response) => {
   const start_date = String(req.query.start_date || '1900-01-01');
   const end_date = String(req.query.end_date || '2100-01-01');
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sale_items')
     .select(`
       product_id,
