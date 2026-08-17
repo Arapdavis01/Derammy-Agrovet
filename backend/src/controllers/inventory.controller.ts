@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // Get current stock levels for all products
 export const getStockLevels = async (req: Request, res: Response) => {
-  const { data: products, error } = await supabase
+  const { data: products, error } = await supabaseAdmin
     .from('products')
     .select(`
       id,
@@ -20,7 +20,6 @@ export const getStockLevels = async (req: Request, res: Response) => {
 
   if (error) throw new AppError('Failed to fetch stock levels', 500);
 
-  // Calculate total stock per product and determine low stock status
   const stockLevels = products.map((product: any) => {
     const totalStock = product.stock_batches.reduce(
       (sum: number, batch: any) => sum + Number(batch.quantity_remaining),
@@ -38,7 +37,7 @@ export const getStockLevels = async (req: Request, res: Response) => {
 
 // Get low stock products
 export const getLowStock = async (req: Request, res: Response) => {
-  const { data: products, error } = await supabase
+  const { data: products, error } = await supabaseAdmin
     .from('products')
     .select(`
       id,
@@ -66,19 +65,19 @@ export const getLowStock = async (req: Request, res: Response) => {
   res.json(lowStock);
 };
 
-// Get expiring soon products (within specified days, default 30)
+// Get expiring soon products
 export const getExpiringSoon = async (req: Request, res: Response) => {
   const { days = '30' } = req.query;
   const daysNum = parseInt(days as string) || 30;
-  
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const futureDate = new Date(today);
   futureDate.setDate(today.getDate() + daysNum);
   futureDate.setHours(23, 59, 59, 999);
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('stock_batches')
     .select(`
       id,
@@ -103,7 +102,6 @@ export const adjustStock = async (req: Request, res: Response) => {
   const { product_id, quantity, reason, batch_id } = req.body;
   const userId = (req as any).user.id;
 
-  // Validate input
   if (!product_id || quantity === undefined || quantity === null || Number(quantity) === 0) {
     throw new AppError('Product and non-zero quantity are required', 400);
   }
@@ -114,8 +112,7 @@ export const adjustStock = async (req: Request, res: Response) => {
 
   const adjustmentQty = Number(quantity);
 
-  // Fetch product details
-  const { data: product, error: prodError } = await supabase
+  const { data: product, error: prodError } = await supabaseAdmin
     .from('products')
     .select('id, name, unit, track_batch_expiry, cost_price')
     .eq('id', product_id)
@@ -126,13 +123,11 @@ export const adjustStock = async (req: Request, res: Response) => {
   let targetBatchId = batch_id || null;
 
   if (product.track_batch_expiry) {
-    // For batch-tracked products, batch_id is required
     if (!targetBatchId) {
       throw new AppError('Batch is required for this product', 400);
     }
 
-    // Verify batch belongs to product
-    const { data: batch, error: batchError } = await supabase
+    const { data: batch, error: batchError } = await supabaseAdmin
       .from('stock_batches')
       .select('id, product_id, quantity_remaining')
       .eq('id', targetBatchId)
@@ -144,16 +139,14 @@ export const adjustStock = async (req: Request, res: Response) => {
     const newQty = Number(batch.quantity_remaining) + adjustmentQty;
     if (newQty < 0) throw new AppError('Insufficient stock in batch', 400);
 
-    // Update batch quantity
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('stock_batches')
       .update({ quantity_remaining: newQty })
       .eq('id', targetBatchId);
 
     if (updateError) throw new AppError('Failed to update batch stock', 500);
   } else {
-    // For non-batch products, use default batch or create one
-    const { data: existingBatch, error: batchQueryError } = await supabase
+    const { data: existingBatch, error: batchQueryError } = await supabaseAdmin
       .from('stock_batches')
       .select('id, quantity_remaining')
       .eq('product_id', product_id)
@@ -166,7 +159,7 @@ export const adjustStock = async (req: Request, res: Response) => {
       const newQty = Number(existingBatch.quantity_remaining) + adjustmentQty;
       if (newQty < 0) throw new AppError('Insufficient stock in batch', 400);
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseAdmin
         .from('stock_batches')
         .update({ quantity_remaining: newQty })
         .eq('id', existingBatch.id);
@@ -174,12 +167,11 @@ export const adjustStock = async (req: Request, res: Response) => {
       if (updateError) throw new AppError('Failed to update stock', 500);
       targetBatchId = existingBatch.id;
     } else {
-      // Create a new batch for non-batch product
       if (adjustmentQty < 0) {
         throw new AppError('Cannot reduce stock: no stock available for this product', 400);
       }
 
-      const { data: newBatch, error: createError } = await supabase
+      const { data: newBatch, error: createError } = await supabaseAdmin
         .from('stock_batches')
         .insert({
           product_id,
@@ -194,8 +186,7 @@ export const adjustStock = async (req: Request, res: Response) => {
     }
   }
 
-  // Record stock movement
-  const { error: movementError } = await supabase
+  const { error: movementError } = await supabaseAdmin
     .from('stock_movements')
     .insert({
       product_id,
@@ -207,17 +198,16 @@ export const adjustStock = async (req: Request, res: Response) => {
     });
 
   if (movementError) {
-    // Rollback the stock update
     if (targetBatchId) {
-      const { data: currentBatch } = await supabase
+      const { data: currentBatch } = await supabaseAdmin
         .from('stock_batches')
         .select('quantity_remaining')
         .eq('id', targetBatchId)
         .single();
-      
+
       if (currentBatch) {
         const rollbackQty = Number(currentBatch.quantity_remaining) - adjustmentQty;
-        await supabase
+        await supabaseAdmin
           .from('stock_batches')
           .update({ quantity_remaining: rollbackQty })
           .eq('id', targetBatchId);
@@ -226,7 +216,7 @@ export const adjustStock = async (req: Request, res: Response) => {
     throw new AppError('Failed to record stock movement', 500);
   }
 
-  res.json({ 
+  res.json({
     message: 'Stock adjusted successfully',
     product_id,
     batch_id: targetBatchId,
@@ -236,20 +226,20 @@ export const adjustStock = async (req: Request, res: Response) => {
 
 // Get stock movements history with filters and pagination
 export const getStockMovements = async (req: Request, res: Response) => {
-  const { 
-    product_id, 
-    type, 
-    start_date, 
-    end_date, 
-    limit = '50', 
-    page = '1' 
+  const {
+    product_id,
+    type,
+    start_date,
+    end_date,
+    limit = '50',
+    page = '1',
   } = req.query as any;
 
   const limitNum = parseInt(limit) || 50;
   const pageNum = parseInt(page) || 1;
   const offset = (pageNum - 1) * limitNum;
 
-  let query = supabase
+  let query = supabaseAdmin
     .from('stock_movements')
     .select(`
       id,
@@ -266,7 +256,6 @@ export const getStockMovements = async (req: Request, res: Response) => {
     .order('created_at', { ascending: false })
     .range(offset, offset + limitNum - 1);
 
-  // Apply filters
   if (product_id) query = query.eq('product_id', product_id);
   if (type) query = query.eq('movement_type', type);
   if (start_date) query = query.gte('created_at', start_date);
@@ -289,7 +278,7 @@ export const getStockMovements = async (req: Request, res: Response) => {
 export const getProductBatches = async (req: Request, res: Response) => {
   const { productId } = req.params;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('stock_batches')
     .select('id, batch_number, expiry_date, quantity_remaining')
     .eq('product_id', productId)
