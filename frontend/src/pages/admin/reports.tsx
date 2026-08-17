@@ -104,9 +104,9 @@ export default function AdminReports() {
         return acc;
       }, {});
 
-      // Explicitly type as DailySummary[]
-      const historyArray: DailySummary[] = Object.values(grouped).sort((a: any, b: any) =>
-        b.date.localeCompare(a.date)
+      // FIX: cast Object.values to DailySummary[] to avoid unknown[] error
+      const historyArray = (Object.values(grouped) as DailySummary[]).sort(
+        (a: DailySummary, b: DailySummary) => b.date.localeCompare(a.date)
       );
 
       historyArray.forEach((h: DailySummary) => {
