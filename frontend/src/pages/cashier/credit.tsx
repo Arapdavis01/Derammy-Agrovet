@@ -4,7 +4,6 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Credit.module.css';
 
 export default function CashierCredit() {
   const { user } = useAuth();
@@ -76,9 +75,14 @@ export default function CashierCredit() {
 
   return (
     <Layout>
-      <h1>Credit Customers with Debt</h1>
+      <h1>
+        <i className="fas fa-file-invoice-dollar" style={{ marginRight: '8px' }}></i>
+        Credit Customers with Debt
+      </h1>
 
-      {loading ? <p>Loading...</p> : (
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
         <table className="table mt-4">
           <thead>
             <tr>
@@ -94,17 +98,27 @@ export default function CashierCredit() {
               <tr key={customer.id}>
                 <td>{customer.name}</td>
                 <td>{customer.phone || '-'}</td>
-                <td style={{ color: 'red' }}>KES {customer.credit_balance.toLocaleString()}</td>
+                <td style={{ color: 'red', fontWeight: 'bold' }}>
+                  KES {customer.credit_balance.toLocaleString()}
+                </td>
                 <td>KES {customer.credit_limit.toLocaleString()}</td>
                 <td>
-                  <button className="btn btn-sm btn-primary" onClick={() => handleRecordPayment(customer)}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => handleRecordPayment(customer)}
+                  >
+                    <i className="fas fa-hand-holding-usd" style={{ marginRight: '4px' }}></i>
                     Record Payment
                   </button>
                 </td>
               </tr>
             ))}
             {customers.length === 0 && (
-              <tr><td colSpan={5} className="text-center">No outstanding debt. Great job!</td></tr>
+              <tr>
+                <td colSpan={5} className="text-center">
+                  No outstanding debt. Great job!
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -112,9 +126,12 @@ export default function CashierCredit() {
 
       {/* Payment Modal */}
       {showPaymentModal && selectedCustomer && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h3>Record Payment</h3>
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>
+              <i className="fas fa-money-bill-wave" style={{ marginRight: '8px' }}></i>
+              Record Payment
+            </h3>
             <p><strong>Customer:</strong> {selectedCustomer.name}</p>
             <p><strong>Current Balance:</strong> KES {selectedCustomer.credit_balance}</p>
             <div className="flex flex-col gap-2">
@@ -150,7 +167,9 @@ export default function CashierCredit() {
               <button className="btn btn-primary" onClick={submitPayment} disabled={submitting}>
                 {submitting ? 'Processing...' : 'Submit Payment'}
               </button>
-              <button className="btn btn-outline" onClick={() => setShowPaymentModal(false)}>Cancel</button>
+              <button className="btn btn-outline" onClick={() => setShowPaymentModal(false)}>
+                Cancel
+              </button>
             </div>
           </div>
         </div>
