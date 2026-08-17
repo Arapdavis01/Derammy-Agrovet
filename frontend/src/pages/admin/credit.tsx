@@ -1,53 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Credit.module.css';
 
 interface Customer {
   id: string;
   name: string;
   phone: string;
-  address: string;
   credit_limit: number;
   credit_balance: number;
-  status: string;
 }
 
-interface LedgerEntry {
-  type: string; // 'sale' | 'payment' | 'return'
-  date: string;
-  description: string;
+interface CreditSale {
+  id: string;
+  invoice_no: string;
+  sale_date: string;
+  total: number;
+  payment_method: string;
+  customer: { id: string; name: string } | null;
+  user: { id: string; full_name: string } | null;
+}
+
+interface Payment {
+  id: string;
+  payment_date: string;
   amount: number;
-  balance: number;
-}
-
-interface AgingEntry {
-  customer_id: string;
-  name: string;
-  balance: number;
-  oldest_credit_date: string;
-  age_days: number;
-  bucket: string;
+  payment_method: string;
+  reference: string;
+  customer: { id: string; name: string } | null;
+  user: { id: string; full_name: string } | null;
 }
 
 export default function AdminCredit() {
   const { user } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'outstanding' | 'all' | 'aging'>('outstanding');
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
-  const [agingData, setAgingData] = useState<AgingEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [ledger, setLedger] = useState<any>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa' | 'bank'>('cash');
-  const [paymentReference, setPaymentReference] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+
+  const [totalCustomers, setTotalCustomers] = useState(0);
+  const [outstanding, setOutstanding] = useState(0);
+  const [customersWithDebt, setCustomersWithDebt] = useState(0);
+  const [todayCreditSales, setTodayCreditSales] = useState(0);
+  const [todayPayments, setTodayPayments] = useState(0);
+
+  const [recentCreditSales, setRecentCreditSales] = useState<CreditSale[]>([]);
+  const [recentPayments, setRecentPayments] = useState<Payment[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) {
@@ -58,295 +57,207 @@ export default function AdminCredit() {
       router.push('/cashier/dashboard');
       return;
     }
-    fetchData();
-  }, [user, activeTab]);
+    fetchAllData();
+  }, [user]);
 
-  const fetchData = async () => {
+  const fetchAllData = async () => {
     setLoading(true);
     try {
-      if (activeTab === 'outstanding') {
-        const res = await api.get('/credit/outstanding');
-        setCustomers(res.data);
-      } else if (activeTab === 'all') {
-        const res = await api.get('/customers');
-        setAllCustomers(res.data.data);
-      } else if (activeTab === 'aging') {
-        const res = await api.get('/credit/aging');
-        setAgingData(res.data);
+      const today = new Date().toISOString().split('T')[0];
+
+      // Fetch customers list
+      const customersRes = await api.get('/customers', { params: { limit: 200 } });
+      const customers = customersRes.data.data || [];
+      setTotalCustomers(customers.length);
+
+      // Fetch outstanding credit
+      const outstandingRes = await api.get('/credit/outstanding');
+      const outstandingList = outstandingRes.data || [];
+      setOutstanding(outstandingList.reduce((sum: number, c: any) => sum + Number(c.credit_balance || 0), 0));
+      setCustomersWithDebt(outstandingList.length);
+
+      // Fetch today's credit sales
+      const creditSalesRes = await api.get('/sales', {
+        params: {
+          payment_method: 'credit',
+          start_date: today,
+          end_date: today,
+          limit: 200,
+        },
+      });
+      const creditSales = creditSalesRes.data.data || [];
+      setTodayCreditSales(creditSales.reduce((sum: number, s: any) => sum + Number(s.total), 0));
+
+      // Fetch today's payments (need endpoint; assume /credit/payments?limit=200)
+      try {
+        const paymentsRes = await api.get('/credit/payments', { params: { limit: 200 } });
+        const allPayments = paymentsRes.data.data || paymentsRes.data || [];
+        const todayPaymentsList = allPayments.filter((p: any) => p.payment_date.startsWith(today));
+        setTodayPayments(todayPaymentsList.reduce((sum: number, p: any) => sum + Number(p.amount), 0));
+
+        // Recent payments (last 10)
+        const recent = allPayments
+          .sort((a: any, b: any) => b.payment_date.localeCompare(a.payment_date))
+          .slice(0, 10);
+        setRecentPayments(recent);
+      } catch (payError) {
+        // If endpoint missing, set zero and empty list
+        setTodayPayments(0);
+        setRecentPayments([]);
       }
-    } catch (error: any) {
-      toast.error('Failed to fetch credit data');
+
+      // Fetch recent credit sales (active debtors only, i.e., payment_status = 'credit' or credit balance > 0)
+      const recentCreditSalesRes = await api.get('/sales', {
+        params: {
+          payment_method: 'credit',
+          limit: 5,
+        },
+      });
+      setRecentCreditSales(recentCreditSalesRes.data.data || []);
+    } catch (error) {
+      toast.error('Failed to load credit data');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleViewLedger = async (customerId: string) => {
-    try {
-      const res = await api.get(`/credit/customers/${customerId}/ledger`);
-      setLedger(res.data);
-      setSelectedCustomer(res.data.customer);
-    } catch (error: any) {
-      toast.error('Failed to fetch ledger');
-    }
-  };
-
-  const handleRecordPayment = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setShowPaymentModal(true);
-    setPaymentAmount('');
-    setPaymentMethod('cash');
-    setPaymentReference('');
-  };
-
-  const submitPayment = async () => {
-    if (!selectedCustomer) return;
-    if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
-      toast.error('Enter a valid amount');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post('/credit/payments', {
-        customer_id: selectedCustomer.id,
-        amount: parseFloat(paymentAmount),
-        payment_method: paymentMethod,
-        reference: paymentReference || undefined,
-      });
-      toast.success('Payment recorded successfully');
-      setShowPaymentModal(false);
-      fetchData();
-      if (ledger) handleViewLedger(selectedCustomer.id);
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to record payment');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const renderOutstanding = () => (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Phone</th>
-          <th>Credit Balance</th>
-          <th>Credit Limit</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {customers.map((customer) => (
-          <tr key={customer.id}>
-            <td>{customer.name}</td>
-            <td>{customer.phone || '-'}</td>
-            <td style={{ color: 'red', fontWeight: 'bold' }}>KES {customer.credit_balance.toLocaleString()}</td>
-            <td>KES {customer.credit_limit.toLocaleString()}</td>
-            <td>
-              <button className="btn btn-sm btn-outline" onClick={() => handleViewLedger(customer.id)}>Ledger</button>
-              <button className="btn btn-sm btn-primary" onClick={() => handleRecordPayment(customer)}>Record Payment</button>
-            </td>
-          </tr>
-        ))}
-        {customers.length === 0 && (
-          <tr><td colSpan={5} className="text-center">No outstanding credit</td></tr>
-        )}
-      </tbody>
-    </table>
-  );
-
-  const renderAllCustomers = () => (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Phone</th>
-          <th>Credit Limit</th>
-          <th>Credit Balance</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {allCustomers.map((customer) => (
-          <tr key={customer.id}>
-            <td>{customer.name}</td>
-            <td>{customer.phone || '-'}</td>
-            <td>KES {customer.credit_limit.toLocaleString()}</td>
-            <td>KES {customer.credit_balance.toLocaleString()}</td>
-            <td>{customer.status}</td>
-            <td>
-              <button className="btn btn-sm btn-outline" onClick={() => handleViewLedger(customer.id)}>Ledger</button>
-              {customer.credit_balance > 0 && (
-                <button className="btn btn-sm btn-primary" onClick={() => handleRecordPayment(customer)}>Record Payment</button>
-              )}
-            </td>
-          </tr>
-        ))}
-        {allCustomers.length === 0 && (
-          <tr><td colSpan={6} className="text-center">No customers found</td></tr>
-        )}
-      </tbody>
-    </table>
-  );
-
-  const renderAging = () => (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Customer</th>
-          <th>Balance</th>
-          <th>Oldest Credit Date</th>
-          <th>Age (days)</th>
-          <th>Bucket</th>
-        </tr>
-      </thead>
-      <tbody>
-        {agingData.map((entry) => (
-          <tr key={entry.customer_id}>
-            <td>{entry.name}</td>
-            <td>KES {entry.balance.toLocaleString()}</td>
-            <td>{entry.oldest_credit_date ? new Date(entry.oldest_credit_date).toLocaleDateString() : 'N/A'}</td>
-            <td>{entry.age_days}</td>
-            <td>{entry.bucket}</td>
-          </tr>
-        ))}
-        {agingData.length === 0 && (
-          <tr><td colSpan={5} className="text-center">No aging data</td></tr>
-        )}
-      </tbody>
-    </table>
-  );
+  // Filter payments based on search
+  const filteredPayments = useMemo(() => {
+    if (!searchTerm) return recentPayments;
+    const term = searchTerm.toLowerCase();
+    return recentPayments.filter(
+      (p) =>
+        p.customer?.name.toLowerCase().includes(term) ||
+        p.reference?.toLowerCase().includes(term) ||
+        p.payment_method.toLowerCase().includes(term)
+    );
+  }, [recentPayments, searchTerm]);
 
   return (
     <Layout>
-      <h1>Credit Management</h1>
-
-      <div className={styles.tabs}>
-        <button
-          className={`${styles.tab} ${activeTab === 'outstanding' ? styles.active : ''}`}
-          onClick={() => setActiveTab('outstanding')}
-        >
-          Outstanding
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'all' ? styles.active : ''}`}
-          onClick={() => setActiveTab('all')}
-        >
-          All Customers
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'aging' ? styles.active : ''}`}
-          onClick={() => setActiveTab('aging')}
-        >
-          Credit Aging
-        </button>
+      <div className="welcome-heading">
+        <h1>Credit Management</h1>
+        <p>Manage customer credit accounts, debt limits, and payments</p>
       </div>
 
-      {loading ? <p>Loading...</p> : (
-        <>
-          {activeTab === 'outstanding' && renderOutstanding()}
-          {activeTab === 'all' && renderAllCustomers()}
-          {activeTab === 'aging' && renderAging()}
-        </>
-      )}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-5 gap-4 mt-4">
+        <div className="card summary-card">
+          <i className="fas fa-users card-icon" style={{ color: '#1B5E20' }}></i>
+          <h4>Total Customers</h4>
+          <p className="summary-value">{totalCustomers}</p>
+          <span className="summary-subtitle">Click to view</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-money-bill-wave card-icon" style={{ color: '#F57C00' }}></i>
+          <h4>Total Outstanding</h4>
+          <p className="summary-value">KES {outstanding.toLocaleString()}</p>
+          <span className="summary-subtitle">All customers</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-exclamation-triangle card-icon" style={{ color: '#D32F2F' }}></i>
+          <h4>Customers with Debt</h4>
+          <p className="summary-value">{customersWithDebt}</p>
+          <span className="summary-subtitle">Click to view</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-calendar-day card-icon" style={{ color: '#0288D1' }}></i>
+          <h4>Today Credit Sales</h4>
+          <p className="summary-value">KES {todayCreditSales.toLocaleString()}</p>
+          <span className="summary-subtitle">Today</span>
+        </div>
+        <div className="card summary-card">
+          <i className="fas fa-hand-holding-usd card-icon" style={{ color: '#4CAF50' }}></i>
+          <h4>Today Payments</h4>
+          <p className="summary-value">KES {todayPayments.toLocaleString()}</p>
+          <span className="summary-subtitle">Received today</span>
+        </div>
+      </div>
 
-      {/* Ledger Modal */}
-      {ledger && selectedCustomer && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h3>Ledger: {selectedCustomer.name}</h3>
-            <p><strong>Balance:</strong> KES {selectedCustomer.credit_balance}</p>
-            <p><strong>Credit Limit:</strong> KES {selectedCustomer.credit_limit}</p>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Amount</th>
-                  <th>Type</th>
+      {/* Recent Credit Sales */}
+      <div className="dashboard-section">
+        <h2><i className="fas fa-file-invoice-dollar" style={{ marginRight: '8px' }}></i>Recent Credit Sales</h2>
+        <p className="text-muted">(Active Debtors Only)</p>
+        {recentCreditSales.length > 0 ? (
+          <table className="table mt-4">
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentCreditSales.map((sale) => (
+                <tr key={sale.id}>
+                  <td>{sale.invoice_no}</td>
+                  <td>{new Date(sale.sale_date).toLocaleString()}</td>
+                  <td>{sale.customer?.name || 'Walk-in'}</td>
+                  <td>KES {sale.total.toLocaleString()}</td>
+                  <td>
+                    <span className="status held">Credit</span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {/* Sales */}
-                {ledger.sales?.map((sale: any) => (
-                  <tr key={`sale-${sale.id}`}>
-                    <td>{new Date(sale.sale_date).toLocaleDateString()}</td>
-                    <td>Sale {sale.invoice_no}</td>
-                    <td>KES {sale.total}</td>
-                    <td>Sale</td>
-                  </tr>
-                ))}
-                {/* Payments */}
-                {ledger.payments?.map((payment: any) => (
-                  <tr key={`pay-${payment.id}`}>
-                    <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
-                    <td>Payment {payment.reference ? `(${payment.reference})` : ''}</td>
-                    <td>KES {payment.amount}</td>
-                    <td>Payment</td>
-                  </tr>
-                ))}
-                {/* Returns */}
-                {ledger.returns?.map((ret: any) => (
-                  <tr key={`ret-${ret.id}`}>
-                    <td>{new Date(ret.return_date).toLocaleDateString()}</td>
-                    <td>Return (Credit Note)</td>
-                    <td>KES {ret.total_refund}</td>
-                    <td>Return</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <button className="btn btn-outline" onClick={() => setLedger(null)}>Close</button>
-          </div>
-        </div>
-      )}
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="alert alert-success mt-4">All debts are cleared!</p>
+        )}
+      </div>
 
-      {/* Payment Modal */}
-      {showPaymentModal && selectedCustomer && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
-            <h3>Record Payment</h3>
-            <p><strong>Customer:</strong> {selectedCustomer.name}</p>
-            <p><strong>Current Balance:</strong> KES {selectedCustomer.credit_balance}</p>
-            <div className="flex flex-col gap-2">
-              <label>Amount</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-                className="input"
-              />
-              <label>Payment Method</label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as any)}
-                className="input"
-              >
-                <option value="cash">Cash</option>
-                <option value="mpesa">M-Pesa</option>
-                <option value="bank">Bank</option>
-              </select>
-              <label>Reference (optional)</label>
-              <input
-                type="text"
-                value={paymentReference}
-                onChange={(e) => setPaymentReference(e.target.value)}
-                className="input"
-                placeholder="e.g., M-Pesa code"
-              />
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitPayment} disabled={submitting}>
-                {submitting ? 'Processing...' : 'Submit Payment'}
-              </button>
-              <button className="btn btn-outline" onClick={() => setShowPaymentModal(false)}>Cancel</button>
-            </div>
-          </div>
+      {/* Recent Debt Payments */}
+      <div className="dashboard-section">
+        <h2><i className="fas fa-receipt" style={{ marginRight: '8px' }}></i>Recent Debt Payments</h2>
+        <p className="text-muted">Last 10</p>
+
+        <div className="filters">
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="input"
+            style={{ maxWidth: '300px' }}
+          />
         </div>
-      )}
+
+        <p className="mt-2">Total: KES {filteredPayments.reduce((sum, p) => sum + Number(p.amount), 0).toLocaleString()}</p>
+
+        <table className="table mt-4">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Amount</th>
+              <th>Method</th>
+              <th>Received By</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredPayments.map((payment) => (
+              <tr key={payment.id}>
+                <td>{new Date(payment.payment_date).toLocaleString()}</td>
+                <td>{payment.customer?.name || '-'}</td>
+                <td>KES {payment.amount.toLocaleString()}</td>
+                <td>{payment.payment_method}</td>
+                <td>{payment.user?.full_name || '-'}</td>
+                <td>
+                  <button className="btn btn-sm btn-outline">
+                    <i className="fas fa-eye"></i> View
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filteredPayments.length === 0 && (
+              <tr><td colSpan={6} className="text-center">No payments found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </Layout>
   );
 }
