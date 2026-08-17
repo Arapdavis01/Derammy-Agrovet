@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 interface StockReductionResult {
@@ -22,7 +22,7 @@ export async function reduceStock(
   }
 
   // Fetch product details
-  const { data: product, error: productError } = await supabase
+  const { data: product, error: productError } = await supabaseAdmin
     .from('products')
     .select('id, name, track_batch_expiry, cost_price')
     .eq('id', productId)
@@ -38,7 +38,7 @@ export async function reduceStock(
     // Batch-tracked product
     if (batchId) {
       // Reduce from specific batch
-      const { data: batch, error: batchError } = await supabase
+      const { data: batch, error: batchError } = await supabaseAdmin
         .from('stock_batches')
         .select('id, quantity_remaining')
         .eq('id', batchId)
@@ -57,7 +57,7 @@ export async function reduceStock(
       }
 
       const newQty = Number(batch.quantity_remaining) - quantity;
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseAdmin
         .from('stock_batches')
         .update({ quantity_remaining: newQty })
         .eq('id', batchId);
@@ -69,7 +69,7 @@ export async function reduceStock(
       reductions.push({ batchId, quantity });
     } else {
       // FEFO: Reduce from multiple batches ordered by expiry date
-      const { data: batches, error: batchesError } = await supabase
+      const { data: batches, error: batchesError } = await supabaseAdmin
         .from('stock_batches')
         .select('id, quantity_remaining, expiry_date')
         .eq('product_id', productId)
@@ -80,7 +80,6 @@ export async function reduceStock(
         throw new AppError('No stock available for this product', 400);
       }
 
-      // Check if total available stock is sufficient
       const totalAvailable = batches.reduce(
         (sum, b) => sum + Number(b.quantity_remaining),
         0
@@ -93,7 +92,6 @@ export async function reduceStock(
         );
       }
 
-      // Reduce from batches
       let remainingToReduce = quantity;
       for (const batch of batches) {
         if (remainingToReduce <= 0) break;
@@ -103,7 +101,7 @@ export async function reduceStock(
 
         if (reduceFromBatch > 0) {
           const newQty = availableInBatch - reduceFromBatch;
-          const { error: updateError } = await supabase
+          const { error: updateError } = await supabaseAdmin
             .from('stock_batches')
             .update({ quantity_remaining: newQty })
             .eq('id', batch.id);
@@ -127,7 +125,7 @@ export async function reduceStock(
     }
   } else {
     // Non-batch product: single generic batch
-    const { data: batch, error: batchError } = await supabase
+    const { data: batch, error: batchError } = await supabaseAdmin
       .from('stock_batches')
       .select('id, quantity_remaining')
       .eq('product_id', productId)
@@ -148,7 +146,7 @@ export async function reduceStock(
     }
 
     const newQty = Number(batch.quantity_remaining) - quantity;
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('stock_batches')
       .update({ quantity_remaining: newQty })
       .eq('id', batch.id);
@@ -163,7 +161,7 @@ export async function reduceStock(
 
   // Record stock movements for each reduction
   for (const reduction of reductions) {
-    const { error: movementError } = await supabase
+    const { error: movementError } = await supabaseAdmin
       .from('stock_movements')
       .insert({
         product_id: productId,
@@ -175,7 +173,6 @@ export async function reduceStock(
       });
 
     if (movementError) {
-      // Log the error but continue - the stock has already been reduced
       console.error('Failed to record stock movement:', movementError);
     }
   }
@@ -203,8 +200,7 @@ export async function addStock(
     throw new AppError('Quantity must be positive', 400);
   }
 
-  // Fetch product details
-  const { data: product, error: productError } = await supabase
+  const { data: product, error: productError } = await supabaseAdmin
     .from('products')
     .select('id, name, track_batch_expiry, cost_price')
     .eq('id', productId)
@@ -217,10 +213,8 @@ export async function addStock(
   let targetBatchId: string;
 
   if (product.track_batch_expiry) {
-    // Batch-tracked product
     if (batchId) {
-      // Add to existing batch
-      const { data: currentBatch, error: batchQueryError } = await supabase
+      const { data: currentBatch, error: batchQueryError } = await supabaseAdmin
         .from('stock_batches')
         .select('id, quantity_remaining')
         .eq('id', batchId)
@@ -232,7 +226,7 @@ export async function addStock(
       }
 
       const newQty = Number(currentBatch.quantity_remaining) + quantity;
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseAdmin
         .from('stock_batches')
         .update({ quantity_remaining: newQty })
         .eq('id', batchId);
@@ -243,13 +237,11 @@ export async function addStock(
 
       targetBatchId = batchId;
     } else {
-      // Create new batch
       if (!batchNumber && !expiryDate) {
-        // For batch-tracked products, batch number and expiry date are recommended
         console.warn('Creating batch without batch number or expiry date');
       }
 
-      const { data: newBatch, error: createError } = await supabase
+      const { data: newBatch, error: createError } = await supabaseAdmin
         .from('stock_batches')
         .insert({
           product_id: productId,
@@ -268,8 +260,7 @@ export async function addStock(
       targetBatchId = newBatch.id;
     }
   } else {
-    // Non-batch product: use generic batch or create one
-    const { data: existingBatch, error: batchQueryError } = await supabase
+    const { data: existingBatch, error: batchQueryError } = await supabaseAdmin
       .from('stock_batches')
       .select('id, quantity_remaining')
       .eq('product_id', productId)
@@ -280,7 +271,7 @@ export async function addStock(
 
     if (existingBatch) {
       const newQty = Number(existingBatch.quantity_remaining) + quantity;
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseAdmin
         .from('stock_batches')
         .update({ quantity_remaining: newQty })
         .eq('id', existingBatch.id);
@@ -291,7 +282,7 @@ export async function addStock(
 
       targetBatchId = existingBatch.id;
     } else {
-      const { data: newBatch, error: createError } = await supabase
+      const { data: newBatch, error: createError } = await supabaseAdmin
         .from('stock_batches')
         .insert({
           product_id: productId,
@@ -309,8 +300,7 @@ export async function addStock(
     }
   }
 
-  // Record stock movement
-  const { error: movementError } = await supabase
+  const { error: movementError } = await supabaseAdmin
     .from('stock_movements')
     .insert({
       product_id: productId,
@@ -322,7 +312,6 @@ export async function addStock(
     });
 
   if (movementError) {
-    // Log the error but continue - stock has already been updated
     console.error('Failed to record stock movement:', movementError);
   }
 
@@ -346,7 +335,6 @@ export async function adjustStock(
   }
 
   if (quantity > 0) {
-    // Add stock
     const result = await addStock(
       productId,
       quantity,
@@ -358,10 +346,8 @@ export async function adjustStock(
       referenceId
     );
 
-    // Update the movement type if it was recorded
     if (result.batchId) {
-      // Find the latest movement for this reference and update type
-      const { data: movements } = await supabase
+      const { data: movements } = await supabaseAdmin
         .from('stock_movements')
         .select('id')
         .eq('reference_id', referenceId)
@@ -370,7 +356,7 @@ export async function adjustStock(
         .limit(1);
 
       if (movements && movements.length > 0) {
-        await supabase
+        await supabaseAdmin
           .from('stock_movements')
           .update({ movement_type: movementType })
           .eq('id', movements[0].id);
@@ -379,7 +365,6 @@ export async function adjustStock(
 
     return result;
   } else {
-    // Reduce stock (quantity is negative)
     const reductions = await reduceStock(
       productId,
       Math.abs(quantity),
@@ -388,9 +373,8 @@ export async function adjustStock(
       referenceId
     );
 
-    // Update movement types
     for (const reduction of reductions.batches) {
-      const { data: movements } = await supabase
+      const { data: movements } = await supabaseAdmin
         .from('stock_movements')
         .select('id')
         .eq('reference_id', referenceId)
@@ -399,7 +383,7 @@ export async function adjustStock(
         .limit(1);
 
       if (movements && movements.length > 0) {
-        await supabase
+        await supabaseAdmin
           .from('stock_movements')
           .update({ movement_type: movementType })
           .eq('id', movements[0].id);
@@ -414,7 +398,7 @@ export async function adjustStock(
  * Get available stock quantity for a product
  */
 export async function getAvailableStock(productId: string): Promise<number> {
-  const { data: batches, error } = await supabase
+  const { data: batches, error } = await supabaseAdmin
     .from('stock_batches')
     .select('quantity_remaining')
     .eq('product_id', productId)
