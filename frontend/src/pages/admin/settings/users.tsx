@@ -4,7 +4,6 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Users.module.css';
 
 interface User {
   id: string;
@@ -67,7 +66,7 @@ export default function AdminUsers() {
     setFormData({
       fullName: user.full_name,
       username: user.username,
-      password: '', // password not editable directly
+      password: '',
       role: user.role,
     });
     setShowForm(true);
@@ -89,7 +88,6 @@ export default function AdminUsers() {
 
     try {
       if (editingUser) {
-        // Update user (without password)
         await api.put(`/users/${editingUser.id}`, {
           fullName: formData.fullName,
           username: formData.username,
@@ -97,7 +95,6 @@ export default function AdminUsers() {
         });
         toast.success('User updated');
       } else {
-        // Create new user
         await api.post('/users', {
           fullName: formData.fullName,
           username: formData.username,
@@ -119,7 +116,6 @@ export default function AdminUsers() {
       if (currentStatus === 'active') {
         await api.put(`/users/${id}/deactivate`);
       } else {
-        // We need an activate endpoint; for now use update with status
         await api.put(`/users/${id}`, { status: 'active' });
       }
       toast.success('User status updated');
@@ -153,7 +149,9 @@ export default function AdminUsers() {
     <Layout>
       <div className="flex justify-between items-center mb-4">
         <h1>Manage All Users</h1>
-        <button className="btn btn-primary" onClick={handleOpenAddForm}>Add User</button>
+        <button className="btn btn-primary" onClick={handleOpenAddForm}>
+          <i className="fas fa-user-plus" style={{ marginRight: '6px' }}></i> Add User
+        </button>
       </div>
 
       {loading ? (
@@ -178,7 +176,7 @@ export default function AdminUsers() {
                 <td>{u.role}</td>
                 <td>••••••</td>
                 <td>
-                  <span className={`${styles.status} ${u.status === 'active' ? styles.active : styles.inactive}`}>
+                  <span className={`status ${u.status === 'active' ? 'active' : 'inactive'}`}>
                     {u.status}
                   </span>
                 </td>
@@ -202,41 +200,22 @@ export default function AdminUsers() {
 
       {/* User Form Modal */}
       {showForm && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
+        <div className="modal-overlay">
+          <div className="modal">
             <h3>{editingUser ? 'Edit User' : 'Add User'}</h3>
             <div className="flex flex-col gap-2">
               <label>Full Name</label>
-              <input
-                type="text"
-                value={formData.fullName}
-                onChange={(e) => handleFormChange('fullName', e.target.value)}
-                className="input"
-              />
+              <input type="text" value={formData.fullName} onChange={(e) => handleFormChange('fullName', e.target.value)} className="input" />
               <label>Username</label>
-              <input
-                type="text"
-                value={formData.username}
-                onChange={(e) => handleFormChange('username', e.target.value)}
-                className="input"
-              />
+              <input type="text" value={formData.username} onChange={(e) => handleFormChange('username', e.target.value)} className="input" />
               {!editingUser && (
                 <>
                   <label>Password</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => handleFormChange('password', e.target.value)}
-                    className="input"
-                  />
+                  <input type="password" value={formData.password} onChange={(e) => handleFormChange('password', e.target.value)} className="input" />
                 </>
               )}
               <label>Role</label>
-              <select
-                value={formData.role}
-                onChange={(e) => handleFormChange('role', e.target.value)}
-                className="input"
-              >
+              <select value={formData.role} onChange={(e) => handleFormChange('role', e.target.value)} className="input">
                 <option value="cashier">Cashier</option>
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
@@ -252,16 +231,11 @@ export default function AdminUsers() {
 
       {/* Reset Password Modal */}
       {resetPasswordUserId && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
+        <div className="modal-overlay">
+          <div className="modal">
             <h3>Reset Password</h3>
             <label>New Password</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="input"
-            />
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="input" />
             <div className="flex gap-2 mt-4">
               <button className="btn btn-primary" onClick={submitResetPassword}>Reset</button>
               <button className="btn btn-outline" onClick={() => setResetPasswordUserId(null)}>Cancel</button>
