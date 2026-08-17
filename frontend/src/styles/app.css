@@ -356,6 +356,10 @@ label {
 
 /* Summary Card (centered, used on Inventory, Credit, Reports) */
 .summary-card {
+  background: var(--bg-card);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--box-shadow-sm);
+  padding: var(--space-5);
   text-align: center;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
@@ -786,6 +790,10 @@ label {
   white-space: nowrap;
 }
 
+.pos-customer-section {
+  margin-bottom: var(--space-4);
+}
+
 .pos-cart-items {
   margin-top: var(--space-4);
 }
@@ -806,34 +814,11 @@ label {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.pos-payment-methods {
-  display: flex;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
   flex-wrap: wrap;
 }
 
-.pos-payment-method {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--gray-300);
-  border-radius: var(--border-radius-md);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.2s;
-}
-
-.pos-payment-method input {
-  display: none;
-}
-
-.pos-payment-method.selected {
-  background: var(--primary-light);
-  border-color: var(--primary);
-  color: var(--primary);
+.pos-payment-select {
+  margin-bottom: 1rem;
 }
 
 .pos-totals {
@@ -875,9 +860,95 @@ label {
   align-self: center;
 }
 
+/* POS Product Grid */
+.pos-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+  max-height: 500px;
+  overflow-y: auto;
+  margin-top: 1rem;
+}
+
+.pos-product-card {
+  background: #fff;
+  border: 2px solid var(--gray-200);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pos-product-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--box-shadow-md);
+}
+
+.pos-product-card .pos-product-name {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.pos-product-card .pos-product-sku {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.pos-product-card .pos-product-price {
+  font-weight: 700;
+  color: var(--secondary);
+  margin: 0.25rem 0;
+}
+
+.pos-product-card .pos-product-stock {
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.pos-product-stock.out { color: var(--danger); }
+.pos-product-stock.low { color: var(--warning); }
+.pos-product-stock.ok { color: var(--success); }
+
+/* Cart Lines */
+.pos-cart-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.pos-cart-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-cart-info strong {
+  font-weight: 600;
+}
+
+.pos-cart-info span {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.pos-cart-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 @media (max-width: 768px) {
   .pos-container {
     grid-template-columns: 1fr;
+  }
+
+  .pos-product-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -989,7 +1060,7 @@ label {
   border-bottom-color: var(--primary);
 }
 
-/* Summary Cards */
+/* Summary Cards Grid (used on Reports) */
 .summary-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1062,91 +1133,6 @@ label {
   border-radius: var(--border-radius-md);
   margin-bottom: var(--space-4);
 }
-/* POS Product Grid */
-.pos-product-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.75rem;
-  max-height: 500px;
-  overflow-y: auto;
-  margin-top: 1rem;
-}
-
-.pos-product-card {
-  background: #fff;
-  border: 2px solid var(--gray-200);
-  border-radius: 0.75rem;
-  padding: 0.75rem;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.pos-product-card:hover {
-  border-color: var(--primary);
-  box-shadow: var(--box-shadow-md);
-}
-
-.pos-product-card .pos-product-name {
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
-.pos-product-card .pos-product-sku {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.pos-product-card .pos-product-price {
-  font-weight: 700;
-  color: var(--secondary);
-  margin: 0.25rem 0;
-}
-
-.pos-product-card .pos-product-stock {
-  font-size: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-}
-
-.pos-product-stock.out { color: var(--danger); }
-.pos-product-stock.low { color: var(--warning); }
-.pos-product-stock.ok { color: var(--success); }
-
-/* Cart Lines */
-.pos-cart-line {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--gray-200);
-}
-
-.pos-cart-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.pos-cart-info strong {
-  font-weight: 600;
-}
-
-.pos-cart-info span {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.pos-cart-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.pos-payment-select {
-  margin-bottom: 1rem;
-}
 
 .badge {
   display: inline-block;
@@ -1157,3 +1143,7 @@ label {
   font-size: 0.8rem;
   margin-left: 4px;
 }
+
+/* ============================================
+   ⚡ ADD FUTURE CUSTOM STYLES BELOW
+   ============================================ */
