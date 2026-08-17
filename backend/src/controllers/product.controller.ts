@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // List products with search, category filter, and pagination
@@ -9,14 +9,13 @@ export const listProducts = async (req: Request, res: Response) => {
     category_id,
     page = '1',
     limit = '20',
-    include_inactive = 'false',
   } = req.query as any;
 
   const pageNum = parseInt(page);
   const limitNum = parseInt(limit);
   const offset = (pageNum - 1) * limitNum;
 
-  let query = supabase
+  let query = supabaseAdmin
     .from('products')
     .select(`
       *,
@@ -31,10 +30,6 @@ export const listProducts = async (req: Request, res: Response) => {
 
   if (category_id) {
     query = query.eq('category_id', category_id);
-  }
-
-  if (include_inactive !== 'true') {
-    // Assuming no 'active' field in products; we can ignore for now
   }
 
   const { data, error, count } = await query;
@@ -53,7 +48,7 @@ export const listProducts = async (req: Request, res: Response) => {
 // Get a single product by ID
 export const getProduct = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('products')
     .select(`
       *,
@@ -82,7 +77,6 @@ export const createProduct = async (req: Request, res: Response) => {
     track_batch_expiry = false,
   } = req.body;
 
-  // Validate required fields
   if (!name || !unit || selling_price === undefined || cost_price === undefined) {
     throw new AppError('Name, unit, cost_price, and selling_price are required', 400);
   }
@@ -91,9 +85,8 @@ export const createProduct = async (req: Request, res: Response) => {
     throw new AppError('Selling price cannot be less than cost price', 400);
   }
 
-  // Check SKU uniqueness if provided
   if (sku) {
-    const { data: existingSku } = await supabase
+    const { data: existingSku } = await supabaseAdmin
       .from('products')
       .select('id')
       .eq('sku', sku)
@@ -101,9 +94,8 @@ export const createProduct = async (req: Request, res: Response) => {
     if (existingSku) throw new AppError('SKU already exists', 409);
   }
 
-  // Check barcode uniqueness if provided
   if (barcode) {
-    const { data: existingBarcode } = await supabase
+    const { data: existingBarcode } = await supabaseAdmin
       .from('products')
       .select('id')
       .eq('barcode', barcode)
@@ -111,7 +103,7 @@ export const createProduct = async (req: Request, res: Response) => {
     if (existingBarcode) throw new AppError('Barcode already exists', 409);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('products')
     .insert({
       name,
@@ -165,7 +157,7 @@ export const updateProduct = async (req: Request, res: Response) => {
   }
 
   if (updates.sku) {
-    const { data: existingSku } = await supabase
+    const { data: existingSku } = await supabaseAdmin
       .from('products')
       .select('id')
       .eq('sku', updates.sku)
@@ -175,7 +167,7 @@ export const updateProduct = async (req: Request, res: Response) => {
   }
 
   if (updates.barcode) {
-    const { data: existingBarcode } = await supabase
+    const { data: existingBarcode } = await supabaseAdmin
       .from('products')
       .select('id')
       .eq('barcode', updates.barcode)
@@ -186,7 +178,7 @@ export const updateProduct = async (req: Request, res: Response) => {
 
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('products')
     .update(updates)
     .eq('id', id)
@@ -201,8 +193,7 @@ export const updateProduct = async (req: Request, res: Response) => {
 export const deleteProduct = async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // Check if product has any stock batches with quantity
-  const { data: stock } = await supabase
+  const { data: stock } = await supabaseAdmin
     .from('stock_batches')
     .select('id')
     .eq('product_id', id)
@@ -213,8 +204,7 @@ export const deleteProduct = async (req: Request, res: Response) => {
     throw new AppError('Cannot delete product with existing stock', 400);
   }
 
-  // Check if product has been sold
-  const { data: saleItems } = await supabase
+  const { data: saleItems } = await supabaseAdmin
     .from('sale_items')
     .select('id')
     .eq('product_id', id)
@@ -224,7 +214,7 @@ export const deleteProduct = async (req: Request, res: Response) => {
     throw new AppError('Cannot delete product with sales history', 400);
   }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('products')
     .delete()
     .eq('id', id);
