@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 import { addStock } from '../services/stock.service';
-import { v4 as uuidv4 } from 'uuid';
 
 // Create a return for a sale
 export const createReturn = async (req: Request, res: Response) => {
@@ -18,7 +17,7 @@ export const createReturn = async (req: Request, res: Response) => {
   if (!items || items.length === 0) throw new AppError('No items to return', 400);
 
   // Fetch sale
-  const { data: sale, error: saleError } = await supabase
+  const { data: sale, error: saleError } = await supabaseAdmin
     .from('sales')
     .select('*')
     .eq('id', sale_id)
@@ -29,7 +28,7 @@ export const createReturn = async (req: Request, res: Response) => {
   if (sale.sale_status === 'refunded') throw new AppError('Sale already refunded', 400);
 
   // Fetch sale items
-  const { data: saleItems, error: itemsError } = await supabase
+  const { data: saleItems, error: itemsError } = await supabaseAdmin
     .from('sale_items')
     .select('*')
     .eq('sale_id', sale_id);
@@ -63,7 +62,7 @@ export const createReturn = async (req: Request, res: Response) => {
   }
 
   // Insert return record
-  const { data: returnRecord, error: returnError } = await supabase
+  const { data: returnRecord, error: returnError } = await supabaseAdmin
     .from('returns')
     .insert({
       sale_id,
@@ -82,7 +81,7 @@ export const createReturn = async (req: Request, res: Response) => {
   // Process each return item
   for (const item of returnItemsData) {
     // Insert return item
-    const { error: insertItemError } = await supabase
+    const { error: insertItemError } = await supabaseAdmin
       .from('return_items')
       .insert({
         return_id: returnRecord.id,
@@ -96,7 +95,7 @@ export const createReturn = async (req: Request, res: Response) => {
 
     if (insertItemError) {
       // Rollback return
-      await supabase.from('returns').delete().eq('id', returnRecord.id);
+      await supabaseAdmin.from('returns').delete().eq('id', returnRecord.id);
       throw new AppError('Failed to insert return item', 500);
     }
 
@@ -114,34 +113,29 @@ export const createReturn = async (req: Request, res: Response) => {
           returnRecord.id
         );
       } catch (e: any) {
-        await supabase.from('returns').delete().eq('id', returnRecord.id);
+        await supabaseAdmin.from('returns').delete().eq('id', returnRecord.id);
         throw e;
       }
     }
   }
 
-  // If credit sale or had credit component, reduce customer balance if credit note or cash refund? 
-  // Actually refund method could be cash/mpesa/credit_note. If credit_note, we keep credit balance, otherwise we may reduce credit balance if original sale was credit.
+  // If credit sale or had credit component, reduce customer balance if credit note
   if (sale.payment_status === 'credit' || sale.payment_method === 'mixed') {
-    // If refund is not credit note, we reduce credit balance by refund amount? But typically if customer returns goods and gets cash, we don't reduce credit, we just pay cash. 
-    // For simplicity, we'll only adjust credit balance if refund_method is 'credit_note' and original sale had credit component.
     if (refund_method === 'credit_note' && sale.customer_id) {
-      const { data: customer } = await supabase
+      const { data: customer } = await supabaseAdmin
         .from('customers')
         .select('credit_balance')
         .eq('id', sale.customer_id)
         .single();
       if (customer) {
         const newBalance = Math.max(0, Number(customer.credit_balance) - totalRefund);
-        await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', sale.customer_id);
+        await supabaseAdmin.from('customers').update({ credit_balance: newBalance }).eq('id', sale.customer_id);
       }
     }
   }
 
-  // Update sale status if fully returned? For now, mark as 'refunded' if all items returned? We'll leave as is; maybe add check later.
-
   // Fetch return details
-  const { data: fullReturn, error: fetchError } = await supabase
+  const { data: fullReturn, error: fetchError } = await supabaseAdmin
     .from('returns')
     .select(`
       *,
@@ -166,7 +160,7 @@ export const listReturns = async (req: Request, res: Response) => {
   const limitNum = parseInt(limit);
   const offset = (pageNum - 1) * limitNum;
 
-  let query = supabase
+  let query = supabaseAdmin
     .from('returns')
     .select(`
       id, sale_id, customer_id, user_id, return_date, reason, total_refund, refund_method, status,
@@ -189,7 +183,7 @@ export const listReturns = async (req: Request, res: Response) => {
 // Get return details
 export const getReturn = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('returns')
     .select(`
       *,
