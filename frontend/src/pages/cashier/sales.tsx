@@ -4,7 +4,6 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Sales.module.css';
 
 export default function CashierSales() {
   const { user } = useAuth();
@@ -64,9 +63,13 @@ export default function CashierSales() {
 
   return (
     <Layout>
-      <h1>My Sales</h1>
-      {/* Filters simplified */}
-      <div className={styles.filters}>
+      <h1>
+        <i className="fas fa-receipt" style={{ marginRight: '8px' }}></i>
+        My Sales
+      </h1>
+
+      {/* Filters */}
+      <div className="filters">
         <input
           type="date"
           value={filters.start_date}
@@ -90,7 +93,9 @@ export default function CashierSales() {
           <option value="credit">Credit</option>
           <option value="mixed">Mixed</option>
         </select>
-        <button className="btn btn-outline" onClick={() => { setPage(1); fetchSales(); }}>Apply</button>
+        <button className="btn btn-outline" onClick={() => { setPage(1); fetchSales(); }}>
+          <i className="fas fa-filter" style={{ marginRight: '4px' }}></i> Apply
+        </button>
       </div>
 
       <table className="table mt-4">
@@ -114,13 +119,20 @@ export default function CashierSales() {
               <td>KES {sale.total.toLocaleString()}</td>
               <td>{sale.payment_method}</td>
               <td>
-                <span className={`${styles.status} ${styles[sale.sale_status]}`}>{sale.sale_status}</span>
+                <span className={`status ${sale.sale_status}`}>
+                  {sale.sale_status}
+                </span>
               </td>
               <td>
-                <button className="btn btn-sm btn-outline" onClick={() => fetchSaleDetail(sale.id)}>View</button>
+                <button className="btn btn-sm btn-outline" onClick={() => fetchSaleDetail(sale.id)}>
+                  <i className="fas fa-eye"></i> View
+                </button>
               </td>
             </tr>
           ))}
+          {sales.length === 0 && (
+            <tr><td colSpan={7} className="text-center">No sales found</td></tr>
+          )}
         </tbody>
       </table>
 
@@ -135,8 +147,8 @@ export default function CashierSales() {
 
       {/* Detail Modal */}
       {selectedSale && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modal}>
+        <div className="modal-overlay">
+          <div className="modal">
             <h3>Sale Details</h3>
             <p><strong>Invoice:</strong> {selectedSale.invoice_no}</p>
             <p><strong>Date:</strong> {new Date(selectedSale.sale_date).toLocaleString()}</p>
