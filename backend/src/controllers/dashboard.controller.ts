@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
 // Admin Dashboard
@@ -28,61 +28,61 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
     topProductsTodayResult,
   ] = await Promise.all([
     // Stock batches with cost price for stock value calculation
-    supabase
+    supabaseAdmin
       .from('stock_batches')
       .select('quantity_remaining, cost_price, product:products(cost_price)')
       .gt('quantity_remaining', 0),
     // Today's sales
-    supabase
+    supabaseAdmin
       .from('sales')
       .select('total, sale_date')
       .gte('sale_date', todayISO)
       .lt('sale_date', tomorrowISO),
     // Total sales (all time)
-    supabase
+    supabaseAdmin
       .from('sales')
       .select('total'),
     // Credit outstanding
-    supabase
+    supabaseAdmin
       .from('customers')
       .select('credit_balance')
       .gt('credit_balance', 0),
     // Returns today
-    supabase
+    supabaseAdmin
       .from('returns')
       .select('id')
       .gte('return_date', todayISO)
       .lt('return_date', tomorrowISO),
     // Purchases count (all)
-    supabase
+    supabaseAdmin
       .from('purchases')
       .select('id', { count: 'exact', head: true }),
     // Products count
-    supabase
+    supabaseAdmin
       .from('products')
       .select('id', { count: 'exact', head: true }),
     // Low stock: fetch products with reorder level
-    supabase
+    supabaseAdmin
       .from('products')
       .select('id, name, reorder_level'),
     // Expiring soon (30 days)
-    supabase
+    supabaseAdmin
       .from('stock_batches')
       .select('id, product_id, expiry_date, quantity_remaining')
       .gt('quantity_remaining', 0)
       .lte('expiry_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]),
     // Cashier performance: group sales by user
-    supabase
+    supabaseAdmin
       .from('sales')
       .select('user_id, total, sale_date, user:users(id, full_name)'),
     // Credit customers with debt
-    supabase
+    supabaseAdmin
       .from('customers')
       .select('id, name, credit_balance, credit_limit')
       .gt('credit_balance', 0)
       .order('credit_balance', { ascending: false }),
     // Top products today
-    supabase
+    supabaseAdmin
       .from('sale_items')
       .select(`
         product_id, quantity, total,
@@ -120,7 +120,7 @@ export const getAdminDashboard = async (req: Request, res: Response) => {
   // Low stock computation: products where total stock < reorder_level
   const productsList = lowStockResult.data || [];
   const stockQuantities = await Promise.all(productsList.map(async (p: any) => {
-    const { data } = await supabase
+    const { data } = await supabaseAdmin
       .from('stock_batches')
       .select('quantity_remaining')
       .eq('product_id', p.id);
@@ -211,24 +211,24 @@ export const getCashierDashboard = async (req: Request, res: Response) => {
     outstandingDebtResult,
     creditCustomersResult,
   ] = await Promise.all([
-    supabase
+    supabaseAdmin
       .from('sales')
       .select('total')
       .eq('user_id', userId)
       .gte('sale_date', todayISO)
       .lt('sale_date', tomorrowISO),
-    supabase
+    supabaseAdmin
       .from('sales')
       .select('total')
       .eq('user_id', userId),
-    supabase
+    supabaseAdmin
       .from('stock_batches')
       .select('quantity_remaining, product_id'),
-    supabase
+    supabaseAdmin
       .from('customers')
       .select('credit_balance')
       .gt('credit_balance', 0),
-    supabase
+    supabaseAdmin
       .from('customers')
       .select('id, name, credit_balance')
       .gt('credit_balance', 0)
