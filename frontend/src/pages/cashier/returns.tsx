@@ -4,7 +4,6 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
-import styles from '@/styles/Returns.module.css';
 
 interface SaleItem {
   id: string;
@@ -76,17 +75,8 @@ export default function CashierReturns() {
     }
     setLoading(true);
     try {
-      // Find sale by invoice_no. We'll use sales list with search? Better to have endpoint? For simplicity, use /sales?invoice_no=... (not implemented). 
-      // We'll fetch all sales and filter client-side? Not efficient. We'll assume we have a sale ID input? 
-      // Alternative: use /sales?limit=100 and find by invoice. For now, we'll prompt to enter sale ID, but we can add an endpoint later.
-      // Let's use the sale id directly for now. We'll modify POS to store sale id? Not necessary.
-      // I'll implement search by invoice using a simple client-side find from /sales?limit=100&search=... maybe not.
-      // For simplicity, I'll ask user to enter sale ID (UUID) instead of invoice.
-      // But the UI should be user-friendly. We'll assume the backend has a GET /sales?invoice_no= endpoint.
-      // We'll add it later. For now, use a prompt.
-      // I'll adjust to use invoice_no directly if we add support.
-      // For now, we'll fetch sale by ID or invoice using a generic fetch.
-      const res = await api.get('/sales', { params: { limit: 100 } });
+      // Fetch recent sales (limit 200) and find by invoice number
+      const res = await api.get('/sales', { params: { limit: 200 } });
       const found = res.data.data.find((s: any) => s.invoice_no === invoiceSearch.trim());
       if (!found) {
         toast.error('Invoice not found');
@@ -145,10 +135,13 @@ export default function CashierReturns() {
 
   return (
     <Layout>
-      <h1>Process Return</h1>
+      <h1>
+        <i className="fas fa-rotate-left" style={{ marginRight: '8px' }}></i>
+        Process Return
+      </h1>
 
       {/* Return form */}
-      <div className={styles.returnForm}>
+      <div className="card">
         <div className="flex gap-2 mb-4">
           <input
             type="text"
@@ -257,7 +250,9 @@ export default function CashierReturns() {
               <td>KES {ret.total_refund}</td>
               <td>{ret.refund_method}</td>
               <td>
-                <button className="btn btn-sm btn-outline" onClick={() => {/* fetch detail */}}>View</button>
+                <button className="btn btn-sm btn-outline" onClick={() => {/* fetch detail */}}>
+                  <i className="fas fa-eye"></i> View
+                </button>
               </td>
             </tr>
           ))}
