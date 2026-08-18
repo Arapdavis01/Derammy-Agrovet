@@ -31,13 +31,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restore user and token from localStorage on initial load
-    const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    if (token && storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const initAuth = async () => {
+      const token = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+
+      if (token && storedUser) {
+        // First, set user from storage to avoid flicker
+        setUser(JSON.parse(storedUser));
+
+        try {
+          // Validate token by fetching current user
+          const res = await api.get('/auth/me');
+          setUser(res.data.user);
+        } catch (error) {
+          // Token invalid or expired
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setUser(null);
+        }
+      }
+      setLoading(false);
+    };
+
+    initAuth();
   }, []);
 
   const login = async (username: string, password: string): Promise<User> => {
