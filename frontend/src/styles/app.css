@@ -1147,3 +1147,88 @@ label {
 /* ============================================
    ⚡ ADD FUTURE CUSTOM STYLES BELOW
    ============================================ */
+/* Improved Modal Styles */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--gray-200);
+  margin-bottom: var(--space-4);
+}
+
+.modal-title {
+  font-size: var(--font-size-xl);
+  color: var(--primary);
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: var(--font-size-xl);
+  color: var(--gray-500);
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  color: var(--danger);
+}
+
+.modal-body {
+  margin-bottom: var(--space-4);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--gray-200);
+}
+
+.form-section {
+  margin-bottom: var(--space-5);
+}
+
+.form-section-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.optional-badge {
+  background: var(--secondary-light);
+  color: var(--secondary);
+  font-size: var(--font-size-xs);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.form-hint {
+  font-size: var(--font-size-xs);
+  color: var(--gray-600);
+  margin-top: var(--space-2);
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.toggle-text {
+  font-weight: 500;
+  color: var(--text-primary);
+}
