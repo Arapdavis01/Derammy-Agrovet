@@ -123,29 +123,48 @@ export const adjustStock = async (req: Request, res: Response) => {
   let targetBatchId = batch_id || null;
 
   if (product.track_batch_expiry) {
-    if (!targetBatchId) {
-      throw new AppError('Batch is required for this product', 400);
+    if (targetBatchId) {
+      // Adjust specific batch
+      const { data: batch, error: batchError } = await supabaseAdmin
+        .from('stock_batches')
+        .select('id, product_id, quantity_remaining')
+        .eq('id', targetBatchId)
+        .single();
+
+      if (batchError || !batch) throw new AppError('Batch not found', 404);
+      if (batch.product_id !== product_id) throw new AppError('Invalid batch for this product', 400);
+
+      const newQty = Number(batch.quantity_remaining) + adjustmentQty;
+      if (newQty < 0) throw new AppError('Insufficient stock in batch', 400);
+
+      const { error: updateError } = await supabaseAdmin
+        .from('stock_batches')
+        .update({ quantity_remaining: newQty })
+        .eq('id', targetBatchId);
+
+      if (updateError) throw new AppError('Failed to update batch stock', 500);
+    } else {
+      // No batch_id provided
+      if (adjustmentQty < 0) {
+        throw new AppError('Cannot reduce stock: batch is required for this product', 400);
+      }
+
+      // Positive adjustment: create a new batch (like purchase)
+      const { data: newBatch, error: createError } = await supabaseAdmin
+        .from('stock_batches')
+        .insert({
+          product_id,
+          quantity_remaining: adjustmentQty,
+          cost_price: product.cost_price || 0,
+        })
+        .select()
+        .single();
+
+      if (createError) throw new AppError('Failed to create stock batch', 500);
+      targetBatchId = newBatch.id;
     }
-
-    const { data: batch, error: batchError } = await supabaseAdmin
-      .from('stock_batches')
-      .select('id, product_id, quantity_remaining')
-      .eq('id', targetBatchId)
-      .single();
-
-    if (batchError || !batch) throw new AppError('Batch not found', 404);
-    if (batch.product_id !== product_id) throw new AppError('Invalid batch for this product', 400);
-
-    const newQty = Number(batch.quantity_remaining) + adjustmentQty;
-    if (newQty < 0) throw new AppError('Insufficient stock in batch', 400);
-
-    const { error: updateError } = await supabaseAdmin
-      .from('stock_batches')
-      .update({ quantity_remaining: newQty })
-      .eq('id', targetBatchId);
-
-    if (updateError) throw new AppError('Failed to update batch stock', 500);
   } else {
+    // Non-batch product: use default batch or create one
     const { data: existingBatch, error: batchQueryError } = await supabaseAdmin
       .from('stock_batches')
       .select('id, quantity_remaining')
@@ -186,6 +205,7 @@ export const adjustStock = async (req: Request, res: Response) => {
     }
   }
 
+  // Record stock movement
   const { error: movementError } = await supabaseAdmin
     .from('stock_movements')
     .insert({
@@ -198,6 +218,7 @@ export const adjustStock = async (req: Request, res: Response) => {
     });
 
   if (movementError) {
+    // Rollback the stock update
     if (targetBatchId) {
       const { data: currentBatch } = await supabaseAdmin
         .from('stock_batches')
