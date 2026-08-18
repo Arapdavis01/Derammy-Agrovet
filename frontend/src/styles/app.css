@@ -951,7 +951,94 @@ label {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+/* ============================================
+   POS RECEIPT & CONFIRMATION MODALS
+   ============================================ */
 
+/* Receipt Body */
+.receipt-body {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.receipt-company {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.receipt-company h4 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.receipt-company p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* Receipt tables and totals */
+.receipt-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+.receipt-body table th,
+.receipt-body table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.receipt-body table th {
+  background: var(--gray-100);
+  font-weight: 600;
+}
+
+.receipt-body p {
+  margin-bottom: 0.25rem;
+}
+
+/* Confirmation Modal */
+.confirm-modal-body {
+  text-align: left;
+}
+
+.confirm-modal-body p {
+  margin-bottom: 0.5rem;
+}
+
+.confirm-modal-body ul {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  list-style: none;
+  padding-left: 0;
+}
+
+.confirm-modal-body ul li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+/* Print styles for receipt */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt-body, .receipt-body * {
+    visibility: visible;
+  }
+  .receipt-body {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    font-size: 12px;
+  }
+}
 /* ============================================
    INVENTORY
    ============================================ */
