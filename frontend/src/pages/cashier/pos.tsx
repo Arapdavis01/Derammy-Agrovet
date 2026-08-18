@@ -343,6 +343,9 @@ export default function POS() {
       return;
     }
 
+    // Determine customer display name
+    const customerName = customer?.name || customerSearch.trim() || 'Walk-in Customer';
+
     const salePayload = {
       items: cart.map((item) => ({
         product_id: item.product.id,
@@ -355,11 +358,12 @@ export default function POS() {
       amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : undefined,
       reference: paymentMethod === 'mpesa' ? reference : undefined,
       customer_id: customer?.id,
+      customer_name: customerName,
     };
 
     const saleSummary = {
       total,
-      customerName: customer?.name || 'Walk-in Customer',
+      customerName,
       paymentMethod: paymentMethod.toUpperCase(),
       tendered: paymentMethod === 'cash' ? parseFloat(amountReceived) : total,
       change: paymentMethod === 'cash' ? calculateChange() : 0,
@@ -872,7 +876,7 @@ export default function POS() {
               {returnSale && (
                 <>
                   <p><strong>Invoice:</strong> {returnSale.invoice_no}</p>
-                  <p><strong>Customer:</strong> {returnSale.customer?.name || 'Walk-in'}</p>
+                  <p><strong>Customer:</strong> {returnSale.customer?.name || returnSale.customer_name || 'Walk-in'}</p>
                   <table className="table mt-4">
                     <thead>
                       <tr>
@@ -994,8 +998,8 @@ export default function POS() {
             <div className="modal-body receipt-body">
               <div className="receipt-company">
                 <h4>DERAMMY AGROVET</h4>
-                <p>P.O BOX 345, Eldoret</p>
-                <p>Tel: 0717***902, 0724***188</p>
+                <p>P.O BOX 345, NANDI HILLS</p>
+                <p>Tel: 0717149902, 0724985188</p>
                 <p>Quality Farm Inputs & Veterinary Supplies</p>
               </div>
               <hr />
@@ -1003,7 +1007,7 @@ export default function POS() {
               <p><strong>{receiptData.invoice_no}</strong></p>
               <p>Date: {new Date(receiptData.sale_date).toLocaleDateString()}</p>
               <p>Time: {new Date(receiptData.sale_date).toLocaleTimeString()}</p>
-              <p>Customer: {receiptData.customer?.name || 'Walk-in Customer'}</p>
+              <p>Customer: {receiptData.customer?.name || receiptData.customer_name || 'Walk-in Customer'}</p>
               <p>Payment: {receiptData.payment_method.toUpperCase()}</p>
               <p>Cashier: {receiptData.user?.full_name || 'Antony'}</p>
               <table className="table mt-2">
