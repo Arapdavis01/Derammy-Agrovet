@@ -30,11 +30,6 @@ interface Product {
   total_stock?: number;
 }
 
-interface StockItem {
-  id: string;
-  total_stock: number;
-}
-
 export default function AdminProducts() {
   const { user } = useAuth();
   const router = useRouter();
@@ -91,11 +86,9 @@ export default function AdminProducts() {
         api.get('/inventory'),
       ]);
 
-      const productsData: Product[] = productsRes.data.data || [];
-      setProducts(productsData);
-      setCategories(categoriesRes.data);
+      setProducts(productsRes.data.data || []);
+      setCategories(categoriesRes.data || []);
 
-      // Build stock map from inventory
       const inventoryData = inventoryRes.data || [];
       const map: Record<string, number> = {};
       inventoryData.forEach((item: any) => {
@@ -379,79 +372,267 @@ export default function AdminProducts() {
         </div>
       )}
 
-      {/* Product Form Modal */}
+      {/* Product Form Modal (Improved) */}
       {showProductForm && (
         <div className="modal-overlay">
           <div className="modal modal-large">
-            <h3>{editingProduct ? 'Edit Product' : 'Add Product'}</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label>Name *</label>
-                <input type="text" value={productForm.name} onChange={(e) => handleProductFormChange('name', e.target.value)} className="input" />
+            {/* Modal Header */}
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fas fa-box-open"></i>{' '}
+                {editingProduct ? 'Edit Product' : 'Add Product'}
+              </h3>
+              <button
+                className="modal-close"
+                onClick={() => setShowProductForm(false)}
+                aria-label="Close"
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="modal-body">
+              {/* Basic Information */}
+              <div className="form-section">
+                <h4 className="form-section-title">
+                  <i className="fas fa-info-circle"></i> Basic Information
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="form-group">
+                    <label htmlFor="prodName">
+                      <i className="fas fa-tag"></i> Name *
+                    </label>
+                    <input
+                      id="prodName"
+                      type="text"
+                      value={productForm.name}
+                      onChange={(e) => handleProductFormChange('name', e.target.value)}
+                      className="input"
+                      placeholder="e.g., Cement"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodBrand">
+                      <i className="fas fa-trademark"></i> Brand
+                    </label>
+                    <input
+                      id="prodBrand"
+                      type="text"
+                      value={productForm.sku}
+                      onChange={(e) => handleProductFormChange('sku', e.target.value)}
+                      className="input"
+                      placeholder="e.g., Bamburi"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodVariant">
+                      <i className="fas fa-list"></i> Variant
+                    </label>
+                    <input
+                      id="prodVariant"
+                      type="text"
+                      value={productForm.variant}
+                      onChange={(e) => handleProductFormChange('variant', e.target.value)}
+                      className="input"
+                      placeholder="e.g., 50kg"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodBarcode">
+                      <i className="fas fa-barcode"></i> Barcode
+                    </label>
+                    <input
+                      id="prodBarcode"
+                      type="text"
+                      value={productForm.barcode}
+                      onChange={(e) => handleProductFormChange('barcode', e.target.value)}
+                      className="input"
+                      placeholder="Scan or enter barcode"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodCategory">
+                      <i className="fas fa-folder"></i> Category
+                    </label>
+                    <select
+                      id="prodCategory"
+                      value={productForm.category_id}
+                      onChange={(e) => handleProductFormChange('category_id', e.target.value)}
+                      className="input"
+                    >
+                      <option value="">Select category</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodUnit">
+                      <i className="fas fa-weight"></i> Unit *
+                    </label>
+                    <input
+                      id="prodUnit"
+                      type="text"
+                      value={productForm.unit}
+                      onChange={(e) => handleProductFormChange('unit', e.target.value)}
+                      className="input"
+                      placeholder="e.g., kg, bag, piece"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label>Brand</label>
-                <input type="text" value={productForm.sku} onChange={(e) => handleProductFormChange('sku', e.target.value)} className="input" />
+
+              {/* Pricing & Stock */}
+              <div className="form-section">
+                <h4 className="form-section-title">
+                  <i className="fas fa-money-bill-wave"></i> Pricing & Stock
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="form-group">
+                    <label htmlFor="prodCost">
+                      <i className="fas fa-download"></i> Cost Price *
+                    </label>
+                    <input
+                      id="prodCost"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={productForm.cost_price}
+                      onChange={(e) => handleProductFormChange('cost_price', e.target.value)}
+                      className="input"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodPrice">
+                      <i className="fas fa-upload"></i> Selling Price *
+                    </label>
+                    <input
+                      id="prodPrice"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={productForm.selling_price}
+                      onChange={(e) => handleProductFormChange('selling_price', e.target.value)}
+                      className="input"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodReorder">
+                      <i className="fas fa-exclamation-triangle"></i> Reorder Level
+                    </label>
+                    <input
+                      id="prodReorder"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={productForm.reorder_level}
+                      onChange={(e) => handleProductFormChange('reorder_level', e.target.value)}
+                      className="input"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodTax">
+                      <i className="fas fa-percentage"></i> Tax Rate (%)
+                    </label>
+                    <input
+                      id="prodTax"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={productForm.tax_rate}
+                      onChange={(e) => handleProductFormChange('tax_rate', e.target.value)}
+                      className="input"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label>Variant</label>
-                <input type="text" value={productForm.variant} onChange={(e) => handleProductFormChange('variant', e.target.value)} className="input" />
+
+              {/* Alternative Sales Unit */}
+              <div className="form-section alt-unit-section">
+                <h4 className="form-section-title">
+                  <i className="fas fa-sync-alt"></i> Alternative Sales Unit
+                  <span className="optional-badge">Optional</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="form-group">
+                    <label htmlFor="prodSalesUnit">
+                      <i className="fas fa-ruler"></i> Sales Unit
+                    </label>
+                    <input
+                      id="prodSalesUnit"
+                      type="text"
+                      value={productForm.sales_unit}
+                      onChange={(e) => handleProductFormChange('sales_unit', e.target.value)}
+                      className="input"
+                      placeholder="e.g., tonne, box"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="prodConvFactor">
+                      <i className="fas fa-calculator"></i> Conversion Factor
+                    </label>
+                    <input
+                      id="prodConvFactor"
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={productForm.conversion_factor}
+                      onChange={(e) => handleProductFormChange('conversion_factor', e.target.value)}
+                      className="input"
+                      placeholder="e.g., 24"
+                    />
+                  </div>
+                </div>
+                <p className="form-hint">
+                  How many base units make one sales unit? Leave empty if not applicable.
+                </p>
               </div>
-              <div>
-                <label>Barcode</label>
-                <input type="text" value={productForm.barcode} onChange={(e) => handleProductFormChange('barcode', e.target.value)} className="input" />
-              </div>
-              <div>
-                <label>Category</label>
-                <select value={productForm.category_id} onChange={(e) => handleProductFormChange('category_id', e.target.value)} className="input">
-                  <option value="">Select category</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label>Unit *</label>
-                <input type="text" value={productForm.unit} onChange={(e) => handleProductFormChange('unit', e.target.value)} className="input" placeholder="e.g., kg, bag, litre" />
-              </div>
-              <div>
-                <label>Cost Price *</label>
-                <input type="number" step="0.01" min="0" value={productForm.cost_price} onChange={(e) => handleProductFormChange('cost_price', e.target.value)} className="input" />
-              </div>
-              <div>
-                <label>Selling Price *</label>
-                <input type="number" step="0.01" min="0" value={productForm.selling_price} onChange={(e) => handleProductFormChange('selling_price', e.target.value)} className="input" />
-              </div>
-              <div>
-                <label>Reorder Level</label>
-                <input type="number" step="0.01" min="0" value={productForm.reorder_level} onChange={(e) => handleProductFormChange('reorder_level', e.target.value)} className="input" />
-              </div>
-              <div>
-                <label>Sales Unit</label>
-                <input type="text" value={productForm.sales_unit} onChange={(e) => handleProductFormChange('sales_unit', e.target.value)} className="input" placeholder="e.g., tonne, box" />
-              </div>
-              <div>
-                <label>Conversion Factor</label>
-                <input type="number" step="1" min="0" value={productForm.conversion_factor} onChange={(e) => handleProductFormChange('conversion_factor', e.target.value)} className="input" />
-              </div>
-              <div>
-                <label>Tax Rate (%)</label>
-                <input type="number" step="0.01" min="0" value={productForm.tax_rate} onChange={(e) => handleProductFormChange('tax_rate', e.target.value)} className="input" />
-              </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={productForm.is_returnable} onChange={(e) => handleProductFormChange('is_returnable', e.target.checked)} />
-                  Returnable
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={productForm.track_batch_expiry} onChange={(e) => handleProductFormChange('track_batch_expiry', e.target.checked)} />
-                  Track Batch/Expiry
-                </label>
+
+              {/* Settings */}
+              <div className="form-section">
+                <h4 className="form-section-title">
+                  <i className="fas fa-cog"></i> Settings
+                </h4>
+                <div className="flex gap-4">
+                  <label className="toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={productForm.is_returnable}
+                      onChange={(e) => handleProductFormChange('is_returnable', e.target.checked)}
+                    />
+                    <span className="toggle-text">
+                      <i className="fas fa-undo"></i> Returnable
+                    </span>
+                  </label>
+                  <label className="toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={productForm.track_batch_expiry}
+                      onChange={(e) => handleProductFormChange('track_batch_expiry', e.target.checked)}
+                    />
+                    <span className="toggle-text">
+                      <i className="fas fa-clock"></i> Track Batch/Expiry
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitProductForm}>Save</button>
-              <button className="btn btn-outline" onClick={() => setShowProductForm(false)}>Cancel</button>
+
+            {/* Modal Footer */}
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowProductForm(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={submitProductForm}>
+                <i className="fas fa-save"></i> {editingProduct ? 'Update Product' : 'Save Product'}
+              </button>
             </div>
           </div>
         </div>
