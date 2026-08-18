@@ -84,6 +84,9 @@ export default function POS() {
   // UI states
   const [loading, setLoading] = useState(false);
   const [saleComplete, setSaleComplete] = useState<any>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingSale, setPendingSale] = useState<any>(null);
+  const [receiptData, setReceiptData] = useState<any>(null);
 
   // Held carts
   const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
@@ -325,8 +328,8 @@ export default function POS() {
     setHeldCarts(heldCarts.filter((hc) => hc.id !== heldCartId));
   };
 
-  // Complete sale
-  const handleCompleteSale = async () => {
+  // Complete sale – shows confirmation modal
+  const handleCompleteSale = () => {
     if (cart.length === 0) {
       toast.error('Cart is empty');
       return;
@@ -340,45 +343,60 @@ export default function POS() {
       return;
     }
 
-    const items = cart.map((item) => ({
-      product_id: item.product.id,
-      quantity: item.quantity,
-    }));
-
-    const payload: any = {
-      items,
+    const salePayload = {
+      items: cart.map((item) => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+      })),
       payment_method: paymentMethod,
       discount,
       tax: vat,
       sale_status: 'completed',
+      amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : undefined,
+      reference: paymentMethod === 'mpesa' ? reference : undefined,
+      customer_id: customer?.id,
     };
 
-    if (customer) payload.customer_id = customer.id;
+    const saleSummary = {
+      total,
+      customerName: customer?.name || 'Walk-in Customer',
+      paymentMethod: paymentMethod.toUpperCase(),
+      tendered: paymentMethod === 'cash' ? parseFloat(amountReceived) : total,
+      change: paymentMethod === 'cash' ? calculateChange() : 0,
+      itemsPreview: cart.map(
+        (item) => `${item.product.name} ×${item.quantity} @ KES ${item.product.selling_price}`
+      ),
+    };
 
-    if (paymentMethod === 'cash') {
-      payload.amount_received = parseFloat(amountReceived);
-    }
+    setPendingSale({ payload: salePayload, summary: saleSummary });
+    setShowConfirmModal(true);
+  };
 
-    if (paymentMethod === 'mpesa') {
-      payload.reference = reference || undefined;
-    }
-
+  // Confirm sale and process
+  const confirmSale = async () => {
+    if (!pendingSale) return;
     setLoading(true);
     try {
-      const res = await api.post('/sales', payload);
+      const res = await api.post('/sales', pendingSale.payload);
+      setReceiptData(res.data);
       setSaleComplete(res.data);
       clearCart();
       setPaymentMethod('cash');
       setAmountReceived('');
       setReference('');
       setDiscount(0);
-      fetchAllProducts(); // refresh stock after sale
+      fetchAllProducts();
       toast.success('Sale completed successfully');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to complete sale');
     } finally {
       setLoading(false);
+      setShowConfirmModal(false);
     }
+  };
+
+  const printReceipt = () => {
+    window.print();
   };
 
   // Return / Exchange
@@ -436,7 +454,7 @@ export default function POS() {
       setReturnInvoice('');
       setReturnSale(null);
       setReturnItems([]);
-      fetchAllProducts(); // refresh stock after return
+      fetchAllProducts();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to process return');
     }
@@ -712,7 +730,8 @@ export default function POS() {
                   min="1"
                   max={getProductStock(quickAddProduct)}
                   value={quickQty}
-                  onChange={(e) => setQuickQty(parseInt(e.target.value) || 1)}
+                  onChange={(e) => setQuickQty(parseInt(e.target.value) || 0)}
+                  onFocus={(e) => e.target.select()}
                   className="input"
                   style={{ textAlign: 'center' }}
                 />
@@ -929,21 +948,96 @@ export default function POS() {
         </div>
       )}
 
-      {/* Sale Complete Receipt Modal */}
-      {saleComplete && (
+      {/* Sale Confirmation Modal */}
+      {showConfirmModal && pendingSale && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h3 className="modal-title"><i className="fas fa-check-circle"></i> Sale Completed</h3>
-              <button className="modal-close" onClick={() => setSaleComplete(null)}><i className="fas fa-times"></i></button>
+              <h3 className="modal-title"><i className="fas fa-check-circle"></i> Complete Sale</h3>
+              <button className="modal-close" onClick={() => setShowConfirmModal(false)}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
-              <p><strong>Invoice:</strong> {saleComplete.invoice_no}</p>
-              <p><strong>Total:</strong> KES {saleComplete.total}</p>
-              <p><strong>Payment:</strong> {saleComplete.payment_method}</p>
+              <p><strong>Total:</strong> KES {pendingSale.summary.total.toFixed(2)}</p>
+              <p><strong>Customer:</strong> {pendingSale.summary.customerName}</p>
+              <p><strong>Payment:</strong> {pendingSale.summary.paymentMethod}</p>
+              {pendingSale.summary.paymentMethod === 'CASH' && (
+                <>
+                  <p><strong>Tendered:</strong> KES {pendingSale.summary.tendered.toFixed(2)}</p>
+                  <p><strong>Change:</strong> KES {pendingSale.summary.change.toFixed(2)}</p>
+                </>
+              )}
+              <h4>Items</h4>
+              <ul>
+                {pendingSale.summary.itemsPreview.map((line: string, index: number) => (
+                  <li key={index}>{line}</li>
+                ))}
+              </ul>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => setSaleComplete(null)}>Close</button>
+              <button className="btn btn-outline" onClick={() => setShowConfirmModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmSale} disabled={loading}>
+                <i className="fas fa-print"></i> Confirm & Print Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Modal */}
+      {receiptData && (
+        <div className="modal-overlay">
+          <div className="modal modal-large">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-receipt"></i> Receipt</h3>
+              <button className="modal-close" onClick={() => setReceiptData(null)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body receipt-body">
+              <div className="receipt-company">
+                <h4>DERAMMY AGROVET</h4>
+                <p>P.O BOX 345, Eldoret</p>
+                <p>Tel: 0717***902, 0724***188</p>
+                <p>Quality Farm Inputs & Veterinary Supplies</p>
+              </div>
+              <hr />
+              <p><strong>SALES RECEIPT</strong></p>
+              <p><strong>{receiptData.invoice_no}</strong></p>
+              <p>Date: {new Date(receiptData.sale_date).toLocaleDateString()}</p>
+              <p>Time: {new Date(receiptData.sale_date).toLocaleTimeString()}</p>
+              <p>Customer: {receiptData.customer?.name || 'Walk-in Customer'}</p>
+              <p>Payment: {receiptData.payment_method.toUpperCase()}</p>
+              <p>Cashier: {receiptData.user?.full_name || 'Antony'}</p>
+              <table className="table mt-2">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receiptData.sale_items.map((item: any) => (
+                    <tr key={item.id}>
+                      <td>{item.product.name}</td>
+                      <td>{item.quantity}</td>
+                      <td>{item.unit_price}</td>
+                      <td>{item.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p>Subtotal: KES {receiptData.subtotal.toFixed(2)}</p>
+              <p>VAT (16%): KES {receiptData.tax.toFixed(2)}</p>
+              <p><strong>TOTAL: KES {receiptData.total.toFixed(2)}</strong></p>
+              <p>Thank you for shopping at</p>
+              <p><strong>DERAMMY AGROVET</strong></p>
+              <p>Welcome again!</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setReceiptData(null)}>Close</button>
+              <button className="btn btn-primary" onClick={printReceipt}>
+                <i className="fas fa-print"></i> Print
+              </button>
             </div>
           </div>
         </div>
