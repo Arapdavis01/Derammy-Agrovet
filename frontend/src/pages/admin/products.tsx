@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -13,8 +13,9 @@ interface Category {
 interface Product {
   id: string;
   name: string;
-  sku: string;
+  sku: string; // used as brand
   barcode: string;
+  variant: string | null;
   category_id: string | null;
   category?: { id: string; name: string } | null;
   unit: string;
@@ -24,7 +25,14 @@ interface Product {
   is_returnable: boolean;
   tax_rate: number;
   track_batch_expiry: boolean;
+  sales_unit?: string | null;
+  conversion_factor?: number | null;
   total_stock?: number;
+}
+
+interface StockItem {
+  id: string;
+  total_stock: number;
 }
 
 export default function AdminProducts() {
@@ -32,23 +40,35 @@ export default function AdminProducts() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Modal states
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState({
     name: '',
     sku: '',
+    variant: '',
     barcode: '',
     category_id: '',
     unit: 'piece',
     cost_price: '',
     selling_price: '',
     reorder_level: '0',
+    sales_unit: '',
+    conversion_factor: '',
     is_returnable: true,
     tax_rate: '0',
     track_batch_expiry: false,
   });
+
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [restockProduct, setRestockProduct] = useState<Product | null>(null);
+  const [restockQty, setRestockQty] = useState('1');
+
+  const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -60,17 +80,28 @@ export default function AdminProducts() {
       return;
     }
     fetchData();
-  }, [user, search]);
+  }, [user]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [productsRes, categoriesRes] = await Promise.all([
-        api.get('/products', { params: { search: search || undefined, limit: 200 } }),
+      const [productsRes, categoriesRes, inventoryRes] = await Promise.all([
+        api.get('/products', { params: { limit: 200 } }),
         api.get('/categories'),
+        api.get('/inventory'),
       ]);
-      setProducts(productsRes.data.data || []);
+
+      const productsData: Product[] = productsRes.data.data || [];
+      setProducts(productsData);
       setCategories(categoriesRes.data);
+
+      // Build stock map from inventory
+      const inventoryData = inventoryRes.data || [];
+      const map: Record<string, number> = {};
+      inventoryData.forEach((item: any) => {
+        map[item.id] = item.total_stock || 0;
+      });
+      setStockMap(map);
     } catch (error: any) {
       toast.error('Failed to fetch products');
     } finally {
@@ -78,38 +109,77 @@ export default function AdminProducts() {
     }
   };
 
-  const handleOpenProductForm = (product?: Product) => {
-    if (product) {
-      setEditingProduct(product);
-      setProductForm({
-        name: product.name,
-        sku: product.sku || '',
-        barcode: product.barcode || '',
-        category_id: product.category_id || '',
-        unit: product.unit,
-        cost_price: product.cost_price.toString(),
-        selling_price: product.selling_price.toString(),
-        reorder_level: product.reorder_level.toString(),
-        is_returnable: product.is_returnable,
-        tax_rate: product.tax_rate.toString(),
-        track_batch_expiry: product.track_batch_expiry,
-      });
-    } else {
-      setEditingProduct(null);
-      setProductForm({
-        name: '',
-        sku: '',
-        barcode: '',
-        category_id: '',
-        unit: 'piece',
-        cost_price: '',
-        selling_price: '',
-        reorder_level: '0',
-        is_returnable: true,
-        tax_rate: '0',
-        track_batch_expiry: false,
-      });
-    }
+  // Group products by name (case-insensitive)
+  const groupedProducts = useMemo(() => {
+    const groups: Record<string, Product[]> = {};
+    products.forEach((product) => {
+      const key = product.name.toLowerCase();
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(product);
+    });
+    return groups;
+  }, [products]);
+
+  // Filter products based on search
+  const filteredGroups = useMemo(() => {
+    if (!search.trim()) return groupedProducts;
+    const term = search.toLowerCase();
+    const result: Record<string, Product[]> = {};
+    Object.entries(groupedProducts).forEach(([key, variants]) => {
+      const groupMatch = key.includes(term);
+      const filteredVariants = variants.filter(
+        (p) =>
+          groupMatch ||
+          (p.sku && p.sku.toLowerCase().includes(term)) ||
+          (p.variant && p.variant.toLowerCase().includes(term)) ||
+          (p.category?.name && p.category.name.toLowerCase().includes(term))
+      );
+      if (filteredVariants.length > 0) {
+        result[key] = filteredVariants;
+      }
+    });
+    return result;
+  }, [groupedProducts, search]);
+
+  const openAddProduct = () => {
+    setEditingProduct(null);
+    setProductForm({
+      name: '',
+      sku: '',
+      variant: '',
+      barcode: '',
+      category_id: '',
+      unit: 'piece',
+      cost_price: '',
+      selling_price: '',
+      reorder_level: '0',
+      sales_unit: '',
+      conversion_factor: '',
+      is_returnable: true,
+      tax_rate: '0',
+      track_batch_expiry: false,
+    });
+    setShowProductForm(true);
+  };
+
+  const openEditProduct = (product: Product) => {
+    setEditingProduct(product);
+    setProductForm({
+      name: product.name,
+      sku: product.sku || '',
+      variant: product.variant || '',
+      barcode: product.barcode || '',
+      category_id: product.category_id || '',
+      unit: product.unit,
+      cost_price: product.cost_price.toString(),
+      selling_price: product.selling_price.toString(),
+      reorder_level: product.reorder_level.toString(),
+      sales_unit: product.sales_unit || '',
+      conversion_factor: product.conversion_factor ? product.conversion_factor.toString() : '',
+      is_returnable: product.is_returnable,
+      tax_rate: product.tax_rate.toString(),
+      track_batch_expiry: product.track_batch_expiry,
+    });
     setShowProductForm(true);
   };
 
@@ -126,13 +196,22 @@ export default function AdminProducts() {
       toast.error('Selling price cannot be less than cost price');
       return;
     }
+
     const payload = {
-      ...productForm,
+      name: productForm.name,
+      sku: productForm.sku,
+      variant: productForm.variant || null,
+      barcode: productForm.barcode,
+      category_id: productForm.category_id || null,
+      unit: productForm.unit,
       cost_price: parseFloat(productForm.cost_price),
       selling_price: parseFloat(productForm.selling_price),
       reorder_level: parseFloat(productForm.reorder_level) || 0,
+      sales_unit: productForm.sales_unit || null,
+      conversion_factor: parseFloat(productForm.conversion_factor) || 0,
+      is_returnable: productForm.is_returnable,
       tax_rate: parseFloat(productForm.tax_rate) || 0,
-      category_id: productForm.category_id || null,
+      track_batch_expiry: productForm.track_batch_expiry,
     };
 
     try {
@@ -150,11 +229,39 @@ export default function AdminProducts() {
     }
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+  const openRestock = (product: Product) => {
+    setRestockProduct(product);
+    setRestockQty('1');
+    setShowRestockModal(true);
+  };
+
+  const submitRestock = async () => {
+    if (!restockProduct) return;
+    const qty = parseFloat(restockQty);
+    if (!qty || qty <= 0) {
+      toast.error('Enter a valid quantity');
+      return;
+    }
     try {
-      await api.delete(`/products/${id}`);
+      await api.post('/inventory/adjust', {
+        product_id: restockProduct.id,
+        quantity: qty,
+        reason: 'Restock from Products page',
+      });
+      toast.success('Stock added successfully');
+      setShowRestockModal(false);
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to restock');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      await api.delete(`/products/${deleteConfirm.id}`);
       toast.success('Product deleted');
+      setDeleteConfirm(null);
       fetchData();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to delete product');
@@ -168,7 +275,7 @@ export default function AdminProducts() {
           <h1>Products ({products.length} items)</h1>
           <p className="text-muted">Manage your product catalog and inventory.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => handleOpenProductForm()}>
+        <button className="btn btn-primary" onClick={openAddProduct}>
           <i className="fas fa-plus" style={{ marginRight: '6px' }}></i> Add Product
         </button>
       </div>
@@ -183,7 +290,7 @@ export default function AdminProducts() {
           className="input"
         />
         <button className="btn btn-outline" onClick={fetchData}>
-          <i className="fas fa-search" style={{ marginRight: '6px' }}></i> Search
+          <i className="fas fa-refresh" style={{ marginRight: '6px' }}></i> Refresh
         </button>
       </div>
 
@@ -191,20 +298,20 @@ export default function AdminProducts() {
         <p>Loading...</p>
       ) : (
         <div className="mt-4">
-          {products.length === 0 ? (
+          {Object.keys(filteredGroups).length === 0 ? (
             <p className="alert alert-info">No products found.</p>
           ) : (
-            products.map((product) => (
-              <div key={product.id} className="card mb-2">
+            Object.entries(filteredGroups).map(([key, variants]) => (
+              <div key={key} className="card mb-2">
                 <div className="flex justify-between items-center">
                   <h3 className="card-title" style={{ marginBottom: '0' }}>
                     <i className="fas fa-box" style={{ marginRight: '8px' }}></i>
-                    {product.name}
+                    {variants[0].name}
                     <span className="text-muted" style={{ fontSize: '0.9rem', marginLeft: '8px' }}>
-                      1 variant
+                      {variants.length} variant{variants.length !== 1 ? 's' : ''}
                     </span>
                   </h3>
-                  <button className="btn btn-sm btn-outline" onClick={() => handleOpenProductForm(product)}>
+                  <button className="btn btn-sm btn-outline" onClick={() => openAddProduct()}>
                     <i className="fas fa-plus" style={{ marginRight: '4px' }}></i> Add Variant
                   </button>
                 </div>
@@ -219,35 +326,51 @@ export default function AdminProducts() {
                       <th>Sell Price</th>
                       <th>Stock</th>
                       <th>Unit</th>
+                      <th>Sales Unit</th>
+                      <th>Conv.</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td>{product.sku || 'Default'}</td>
-                      <td>{product.name}</td>
-                      <td>{product.category?.name || 'Uncategorized'}</td>
-                      <td>KES {product.cost_price.toFixed(2)}</td>
-                      <td>KES {product.selling_price.toFixed(2)}/{product.unit}</td>
-                      <td>{product.total_stock || 0}</td>
-                      <td>{product.unit}</td>
-                      <td>
-                        {product.total_stock === 0 ? (
-                          <span className="status inactive">Out of Stock</span>
-                        ) : (
-                          <span className="status active">OK</span>
-                        )}
-                      </td>
-                      <td>
-                        <button className="btn btn-sm btn-outline" onClick={() => handleOpenProductForm(product)}>
-                          <i className="fas fa-edit"></i>
-                        </button>
-                        <button className="btn btn-sm btn-danger" onClick={() => handleDeleteProduct(product.id)}>
-                          <i className="fas fa-trash"></i>
-                        </button>
-                      </td>
-                    </tr>
+                    {variants.map((product) => {
+                      const stock = stockMap[product.id] ?? 0;
+                      const status =
+                        stock <= 0
+                          ? 'inactive'
+                          : stock <= product.reorder_level
+                          ? 'held'
+                          : 'active';
+                      const statusText =
+                        stock <= 0 ? 'Out' : stock <= product.reorder_level ? 'Low' : 'OK';
+                      return (
+                        <tr key={product.id}>
+                          <td>{product.sku || '-'}</td>
+                          <td>{product.variant || '-'}</td>
+                          <td>{product.category?.name || 'Uncategorized'}</td>
+                          <td>KES {product.cost_price.toFixed(2)}</td>
+                          <td>KES {product.selling_price.toFixed(2)}/{product.unit}</td>
+                          <td>{stock}</td>
+                          <td>{product.unit}</td>
+                          <td>{product.sales_unit || '-'}</td>
+                          <td>{product.conversion_factor || '-'}</td>
+                          <td>
+                            <span className={`status ${status}`}>{statusText}</span>
+                          </td>
+                          <td>
+                            <button className="btn btn-sm btn-outline" onClick={() => openEditProduct(product)}>
+                              <i className="fas fa-edit"></i>
+                            </button>
+                            <button className="btn btn-sm btn-outline" onClick={() => openRestock(product)}>
+                              <i className="fas fa-plus"></i>
+                            </button>
+                            <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(product)}>
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -267,8 +390,12 @@ export default function AdminProducts() {
                 <input type="text" value={productForm.name} onChange={(e) => handleProductFormChange('name', e.target.value)} className="input" />
               </div>
               <div>
-                <label>SKU / Brand</label>
+                <label>Brand</label>
                 <input type="text" value={productForm.sku} onChange={(e) => handleProductFormChange('sku', e.target.value)} className="input" />
+              </div>
+              <div>
+                <label>Variant</label>
+                <input type="text" value={productForm.variant} onChange={(e) => handleProductFormChange('variant', e.target.value)} className="input" />
               </div>
               <div>
                 <label>Barcode</label>
@@ -300,6 +427,14 @@ export default function AdminProducts() {
                 <input type="number" step="0.01" min="0" value={productForm.reorder_level} onChange={(e) => handleProductFormChange('reorder_level', e.target.value)} className="input" />
               </div>
               <div>
+                <label>Sales Unit</label>
+                <input type="text" value={productForm.sales_unit} onChange={(e) => handleProductFormChange('sales_unit', e.target.value)} className="input" placeholder="e.g., tonne, box" />
+              </div>
+              <div>
+                <label>Conversion Factor</label>
+                <input type="number" step="1" min="0" value={productForm.conversion_factor} onChange={(e) => handleProductFormChange('conversion_factor', e.target.value)} className="input" />
+              </div>
+              <div>
                 <label>Tax Rate (%)</label>
                 <input type="number" step="0.01" min="0" value={productForm.tax_rate} onChange={(e) => handleProductFormChange('tax_rate', e.target.value)} className="input" />
               </div>
@@ -317,6 +452,46 @@ export default function AdminProducts() {
             <div className="flex gap-2 mt-4">
               <button className="btn btn-primary" onClick={submitProductForm}>Save</button>
               <button className="btn btn-outline" onClick={() => setShowProductForm(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restock Modal */}
+      {showRestockModal && restockProduct && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Restock: {restockProduct.name}</h3>
+            <p>Current Stock: {stockMap[restockProduct.id] ?? 0} {restockProduct.unit}</p>
+            <div className="form-group">
+              <label>Quantity to Add ({restockProduct.unit})</label>
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                value={restockQty}
+                onChange={(e) => setRestockQty(e.target.value)}
+                className="input"
+                style={{ textAlign: 'center' }}
+              />
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button className="btn btn-primary" onClick={submitRestock}>Add Stock</button>
+              <button className="btn btn-outline" onClick={() => setShowRestockModal(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Delete Product</h3>
+            <p>Are you sure you want to delete <strong>{deleteConfirm.name}</strong>?</p>
+            <div className="flex gap-2 mt-4">
+              <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+              <button className="btn btn-outline" onClick={() => setDeleteConfirm(null)}>Cancel</button>
             </div>
           </div>
         </div>
