@@ -26,7 +26,7 @@ export const createSale = async (req: Request, res: Response) => {
     payment_method,
     payments,
     discount = 0,
-    tax = 0,
+    tax = 0, // this is ignored; we recalculate from items
     sale_status = 'completed',
   } = req.body as any;
 
@@ -35,10 +35,10 @@ export const createSale = async (req: Request, res: Response) => {
   if (!items || items.length === 0) throw new AppError('No items provided', 400);
   if (!payment_method) throw new AppError('Payment method required', 400);
 
-  let subtotal = 0;
+  let subtotalInclVAT = 0;
   const saleItemsData: any[] = [];
 
-  // Validate each item, calculate line totals
+  // Validate each item, calculate line totals (VAT inclusive)
   for (const item of items) {
     const { product_id, quantity, unit_price, discount: lineDiscount = 0, batch_id } = item;
     if (!product_id || !quantity || quantity <= 0) {
@@ -57,7 +57,7 @@ export const createSale = async (req: Request, res: Response) => {
     }
 
     const lineTotal = Number(quantity) * Number(price) - Number(lineDiscount);
-    subtotal += lineTotal;
+    subtotalInclVAT += lineTotal;
     saleItemsData.push({
       product_id,
       quantity,
@@ -68,8 +68,11 @@ export const createSale = async (req: Request, res: Response) => {
     });
   }
 
-  const totalAfterDiscount = subtotal - Number(discount);
-  const total = totalAfterDiscount + Number(tax);
+  // VAT-inclusive selling price => extract VAT
+  const subtotalExclVAT = subtotalInclVAT / 1.16;
+  const vatAmount = subtotalInclVAT - subtotalExclVAT;
+  const totalAfterDiscount = subtotalInclVAT - Number(discount);
+  const total = totalAfterDiscount;
 
   let totalPaid = 0;
   let paymentStatus = 'paid';
@@ -128,9 +131,9 @@ export const createSale = async (req: Request, res: Response) => {
       invoice_no,
       customer_id: customer_id || null,
       user_id: userId,
-      subtotal,
+      subtotal: subtotalExclVAT,   // store excluding VAT
       discount,
-      tax,
+      tax: vatAmount,              // store VAT portion
       total,
       amount_paid: amountPaid,
       change_due: changeDue,
