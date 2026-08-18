@@ -25,7 +25,7 @@ export const listProducts = async (req: Request, res: Response) => {
     .range(offset, offset + limitNum - 1);
 
   if (search) {
-    query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%,barcode.ilike.%${search}%`);
+    query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%,barcode.ilike.%${search}%,variant.ilike.%${search}%,sales_unit.ilike.%${search}%`);
   }
 
   if (category_id) {
@@ -75,6 +75,9 @@ export const createProduct = async (req: Request, res: Response) => {
     is_returnable = true,
     tax_rate = 0,
     track_batch_expiry = false,
+    variant = null,
+    sales_unit = null,
+    conversion_factor = 0,
   } = req.body;
 
   if (!name || !unit || selling_price === undefined || cost_price === undefined) {
@@ -117,6 +120,9 @@ export const createProduct = async (req: Request, res: Response) => {
       is_returnable,
       tax_rate,
       track_batch_expiry,
+      variant,
+      sales_unit,
+      conversion_factor,
     })
     .select()
     .single();
@@ -142,6 +148,9 @@ export const updateProduct = async (req: Request, res: Response) => {
     'is_returnable',
     'tax_rate',
     'track_batch_expiry',
+    'variant',
+    'sales_unit',
+    'conversion_factor',
   ];
 
   allowedFields.forEach((field) => {
