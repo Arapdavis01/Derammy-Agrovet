@@ -277,7 +277,7 @@ export default function AdminProducts() {
       <div className="filters">
         <input
           type="text"
-          placeholder="Search by name, brand, variant, or category (e.g., cement)..."
+          placeholder="Search by name, brand, variant, or category (e.g., supplements)..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="input"
@@ -409,7 +409,7 @@ export default function AdminProducts() {
                       value={productForm.name}
                       onChange={(e) => handleProductFormChange('name', e.target.value)}
                       className="input"
-                      placeholder="e.g., Cement"
+                      placeholder="e.g., supplements"
                     />
                   </div>
                   <div className="form-group">
@@ -422,7 +422,7 @@ export default function AdminProducts() {
                       value={productForm.sku}
                       onChange={(e) => handleProductFormChange('sku', e.target.value)}
                       className="input"
-                      placeholder="e.g., Bamburi"
+                      placeholder="e.g., kenya seed company"
                     />
                   </div>
                   <div className="form-group">
