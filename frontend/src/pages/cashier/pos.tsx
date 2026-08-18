@@ -273,13 +273,14 @@ export default function POS() {
     }
   };
 
-  // Totals
-  const subtotal = useMemo(
+  // Totals – VAT inclusive selling price
+  const totalInclVAT = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity * item.product.selling_price, 0),
     [cart]
   );
-  const vat = subtotal * 0.16;
-  const total = subtotal + vat - discount;
+  const subtotal = totalInclVAT / 1.16;
+  const vat = totalInclVAT - subtotal;
+  const total = totalInclVAT - discount;
 
   const calculateChange = () => {
     const cash = parseFloat(amountReceived) || 0;
