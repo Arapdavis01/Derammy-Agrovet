@@ -22,11 +22,12 @@ const generateInvoiceNo = async (): Promise<string> => {
 export const createSale = async (req: Request, res: Response) => {
   const {
     customer_id,
+    customer_name,
     items,
     payment_method,
     payments,
     discount = 0,
-    tax = 0, // this is ignored; we recalculate from items
+    tax = 0,
     sale_status = 'completed',
   } = req.body as any;
 
@@ -130,10 +131,11 @@ export const createSale = async (req: Request, res: Response) => {
     .insert({
       invoice_no,
       customer_id: customer_id || null,
+      customer_name: customer_name || null,   // for walk-in customer name
       user_id: userId,
-      subtotal: subtotalExclVAT,   // store excluding VAT
+      subtotal: subtotalExclVAT,
       discount,
-      tax: vatAmount,              // store VAT portion
+      tax: vatAmount,
       total,
       amount_paid: amountPaid,
       change_due: changeDue,
@@ -252,7 +254,7 @@ export const listSales = async (req: Request, res: Response) => {
   let query = supabaseAdmin
     .from('sales')
     .select(`
-      id, invoice_no, customer_id, user_id, sale_date, subtotal, discount, tax, total, amount_paid, payment_status, sale_status, payment_method,
+      id, invoice_no, customer_id, customer_name, user_id, sale_date, subtotal, discount, tax, total, amount_paid, payment_status, sale_status, payment_method,
       customer:customers(id, name),
       user:users(id, full_name)
     `, { count: 'exact' })
