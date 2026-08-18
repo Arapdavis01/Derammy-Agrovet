@@ -4,6 +4,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 interface Product {
   id: string;
@@ -13,6 +14,8 @@ interface Product {
   selling_price: number;
   cost_price: number;
   track_batch_expiry: boolean;
+  sales_unit?: string | null;
+  conversion_factor?: number | null;
   stock_batches?: { quantity_remaining: number }[];
 }
 
@@ -51,6 +54,7 @@ export default function POS() {
 
   // Product list
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [quickAddProduct, setQuickAddProduct] = useState<Product | null>(null);
@@ -92,7 +96,28 @@ export default function POS() {
   const [returnItems, setReturnItems] = useState<ReturnItemInput[]>([]);
   const [refundMethod, setRefundMethod] = useState<'cash' | 'mpesa' | 'credit_note'>('cash');
 
-  // Load all products on mount
+  const fetchAllProducts = useCallback(async () => {
+    try {
+      const [productsRes, inventoryRes] = await Promise.all([
+        api.get('/products', { params: { limit: 200 } }),
+        api.get('/inventory'),
+      ]);
+      const products = productsRes.data.data || [];
+      setAllProducts(products);
+      setFilteredProducts(products);
+
+      const inventoryData = inventoryRes.data || [];
+      const map: Record<string, number> = {};
+      inventoryData.forEach((item: any) => {
+        map[item.id] = item.total_stock || 0;
+      });
+      setStockMap(map);
+    } catch (error) {
+      toast.error('Failed to load products');
+    }
+  }, []);
+
+  // Initial load + auto-refresh
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -103,18 +128,10 @@ export default function POS() {
       return;
     }
     fetchAllProducts();
-  }, [user]);
+  }, [user, fetchAllProducts]);
 
-  const fetchAllProducts = async () => {
-    try {
-      const res = await api.get('/products', { params: { limit: 200 } });
-      const products = res.data.data || [];
-      setAllProducts(products);
-      setFilteredProducts(products);
-    } catch (error) {
-      toast.error('Failed to load products');
-    }
-  };
+  // Realtime refresh every 10 seconds and when tab becomes visible
+  useRealtimeRefresh(fetchAllProducts, 10000);
 
   // Filter products based on search
   useEffect(() => {
@@ -132,9 +149,7 @@ export default function POS() {
   }, [searchTerm, allProducts]);
 
   const getProductStock = (product: Product): number => {
-    return (
-      product.stock_batches?.reduce((sum, batch) => sum + Number(batch.quantity_remaining), 0) || 0
-    );
+    return stockMap[product.id] ?? 0;
   };
 
   const isOutOfStock = (product: Product): boolean => {
@@ -356,6 +371,7 @@ export default function POS() {
       setAmountReceived('');
       setReference('');
       setDiscount(0);
+      fetchAllProducts(); // refresh stock after sale
       toast.success('Sale completed successfully');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to complete sale');
@@ -419,6 +435,7 @@ export default function POS() {
       setReturnInvoice('');
       setReturnSale(null);
       setReturnItems([]);
+      fetchAllProducts(); // refresh stock after return
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to process return');
     }
@@ -680,29 +697,34 @@ export default function POS() {
       {quickAddProduct && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>Add to Cart</h3>
-            <p><strong>{quickAddProduct.name}</strong></p>
-            <p>Available: {getProductStock(quickAddProduct)} {quickAddProduct.unit}</p>
-            <div className="form-group">
-              <label>Quantity</label>
-              <input
-                type="number"
-                min="1"
-                max={getProductStock(quickAddProduct)}
-                value={quickQty}
-                onChange={(e) => setQuickQty(parseInt(e.target.value) || 1)}
-                className="input"
-                style={{ textAlign: 'center' }}
-              />
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-cart-plus"></i> Add to Cart</h3>
+              <button className="modal-close" onClick={closeQuickAdd}><i className="fas fa-times"></i></button>
             </div>
-            <p className="pos-grand-total">
-              Total: KES {(quickQty * quickAddProduct.selling_price).toFixed(2)}
-            </p>
-            <div className="flex gap-2">
+            <div className="modal-body">
+              <p><strong>{quickAddProduct.name}</strong></p>
+              <p>Available: {getProductStock(quickAddProduct)} {quickAddProduct.unit}</p>
+              <div className="form-group">
+                <label>Quantity</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={getProductStock(quickAddProduct)}
+                  value={quickQty}
+                  onChange={(e) => setQuickQty(parseInt(e.target.value) || 1)}
+                  className="input"
+                  style={{ textAlign: 'center' }}
+                />
+              </div>
+              <p className="pos-grand-total">
+                Total: KES {(quickQty * quickAddProduct.selling_price).toFixed(2)}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={closeQuickAdd}>Cancel</button>
               <button className="btn btn-primary" onClick={addToCartFromQuickAdd}>
                 <i className="fas fa-cart-plus"></i> Add to Cart
               </button>
-              <button className="btn btn-outline" onClick={closeQuickAdd}>Cancel</button>
             </div>
           </div>
         </div>
@@ -712,44 +734,55 @@ export default function POS() {
       {showCustomerForm && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>Register Credit Customer</h3>
-            <div className="flex flex-col gap-2">
-              <label>Name *</label>
-              <input
-                type="text"
-                value={customerForm.name}
-                onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
-                className="input"
-              />
-              <label>Phone</label>
-              <input
-                type="text"
-                value={customerForm.phone}
-                onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
-                className="input"
-              />
-              <label>Address</label>
-              <input
-                type="text"
-                value={customerForm.address}
-                onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })}
-                className="input"
-              />
-              <label>Credit Limit (KES)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={customerForm.credit_limit}
-                onChange={(e) =>
-                  setCustomerForm({ ...customerForm, credit_limit: parseFloat(e.target.value) || 0 })
-                }
-                className="input"
-              />
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-user-plus"></i> Register Credit Customer</h3>
+              <button className="modal-close" onClick={() => setShowCustomerForm(false)}><i className="fas fa-times"></i></button>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitCustomerForm}>Save</button>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Name *</label>
+                <input
+                  type="text"
+                  value={customerForm.name}
+                  onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div className="form-group">
+                <label>Phone</label>
+                <input
+                  type="text"
+                  value={customerForm.phone}
+                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div className="form-group">
+                <label>Address</label>
+                <input
+                  type="text"
+                  value={customerForm.address}
+                  onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div className="form-group">
+                <label>Credit Limit (KES)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={customerForm.credit_limit}
+                  onChange={(e) =>
+                    setCustomerForm({ ...customerForm, credit_limit: parseFloat(e.target.value) || 0 })
+                  }
+                  className="input"
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowCustomerForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitCustomerForm}><i className="fas fa-save"></i> Save</button>
             </div>
           </div>
         </div>
@@ -759,37 +792,40 @@ export default function POS() {
       {showHeldCarts && (
         <div className="modal-overlay">
           <div className="modal modal-large">
-            <h3>Held Carts ({heldCarts.length})</h3>
-            {heldCarts.length === 0 ? (
-              <p>No held carts.</p>
-            ) : (
-              heldCarts.map((hc) => (
-                <div key={hc.id} className="card mb-2">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <strong>Cart #{hc.id}</strong>
-                      <span className="text-muted">
-                        {new Date(hc.timestamp).toLocaleTimeString()}
-                      </span>
-                      {hc.customer && <span> | {hc.customer.name}</span>}
-                      <p>
-                        Items: {hc.cart.reduce((sum, item) => sum + item.quantity, 0)} | Total: KES{' '}
-                        {hc.cart.reduce((sum, item) => sum + item.quantity * item.product.selling_price, 0).toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="btn btn-sm btn-primary" onClick={() => resumeHeldCart(hc.id)}>
-                        Resume
-                      </button>
-                      <button className="btn btn-sm btn-danger" onClick={() => deleteHeldCart(hc.id)}>
-                        Delete
-                      </button>
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-list"></i> Held Carts ({heldCarts.length})</h3>
+              <button className="modal-close" onClick={() => setShowHeldCarts(false)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body">
+              {heldCarts.length === 0 ? (
+                <p>No held carts.</p>
+              ) : (
+                heldCarts.map((hc) => (
+                  <div key={hc.id} className="card mb-2">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <strong>Cart #{hc.id}</strong>
+                        <span className="text-muted">
+                          {new Date(hc.timestamp).toLocaleTimeString()}
+                        </span>
+                        {hc.customer && <span> | {hc.customer.name}</span>}
+                        <p>
+                          Items: {hc.cart.reduce((sum, item) => sum + item.quantity, 0)} | Total: KES{' '}
+                          {hc.cart.reduce((sum, item) => sum + item.quantity * item.product.selling_price, 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="btn btn-sm btn-primary" onClick={() => resumeHeldCart(hc.id)}>Resume</button>
+                        <button className="btn btn-sm btn-danger" onClick={() => deleteHeldCart(hc.id)}>Delete</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            )}
-            <button className="btn btn-outline" onClick={() => setShowHeldCarts(false)}>Close</button>
+                ))
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowHeldCarts(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}
@@ -798,93 +834,96 @@ export default function POS() {
       {showReturnModal && (
         <div className="modal-overlay">
           <div className="modal modal-large">
-            <h3>Return / Exchange</h3>
-            <div className="flex gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Enter receipt number"
-                value={returnInvoice}
-                onChange={(e) => setReturnInvoice(e.target.value)}
-                className="input"
-              />
-              <button className="btn btn-outline" onClick={searchReturnSale}>Search</button>
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-rotate-left"></i> Return / Exchange</h3>
+              <button className="modal-close" onClick={() => setShowReturnModal(false)}><i className="fas fa-times"></i></button>
             </div>
-            {returnSale && (
-              <>
-                <p><strong>Invoice:</strong> {returnSale.invoice_no}</p>
-                <p><strong>Customer:</strong> {returnSale.customer?.name || 'Walk-in'}</p>
-                <table className="table mt-4">
-                  <thead>
-                    <tr>
-                      <th>Product</th>
-                      <th>Original Qty</th>
-                      <th>Return Qty</th>
-                      <th>Reason</th>
-                      <th>Condition</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {returnSale.sale_items.map((item: any) => (
-                      <tr key={item.id}>
-                        <td>{item.product.name}</td>
-                        <td>{item.quantity} {item.product.unit}</td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0"
-                            max={item.quantity}
-                            step="0.1"
-                            className="input"
-                            style={{ width: '80px' }}
-                            onChange={(e) =>
-                              handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            className="input"
-                            placeholder="Reason"
-                            onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)}
-                          />
-                        </td>
-                        <td>
-                          <select
-                            className="input"
-                            onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)}
-                            defaultValue="resellable"
-                          >
-                            <option value="resellable">Resellable</option>
-                            <option value="damaged">Damaged</option>
-                            <option value="expired">Expired</option>
-                          </select>
-                        </td>
+            <div className="modal-body">
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  placeholder="Enter receipt number"
+                  value={returnInvoice}
+                  onChange={(e) => setReturnInvoice(e.target.value)}
+                  className="input"
+                />
+                <button className="btn btn-outline" onClick={searchReturnSale}>Search</button>
+              </div>
+              {returnSale && (
+                <>
+                  <p><strong>Invoice:</strong> {returnSale.invoice_no}</p>
+                  <p><strong>Customer:</strong> {returnSale.customer?.name || 'Walk-in'}</p>
+                  <table className="table mt-4">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Original Qty</th>
+                        <th>Return Qty</th>
+                        <th>Reason</th>
+                        <th>Condition</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="mt-2">
-                  <label>Refund Method</label>
-                  <select
-                    value={refundMethod}
-                    onChange={(e) => setRefundMethod(e.target.value as any)}
-                    className="input"
-                    style={{ maxWidth: '200px' }}
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="mpesa">M-Pesa</option>
-                    <option value="credit_note">Credit Note</option>
-                  </select>
-                </div>
-                <button className="btn btn-primary mt-4" onClick={submitReturn}>
-                  Submit Return
-                </button>
-              </>
-            )}
-            <button className="btn btn-outline mt-2" onClick={() => setShowReturnModal(false)}>
-              Close
-            </button>
+                    </thead>
+                    <tbody>
+                      {returnSale.sale_items.map((item: any) => (
+                        <tr key={item.id}>
+                          <td>{item.product.name}</td>
+                          <td>{item.quantity} {item.product.unit}</td>
+                          <td>
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.quantity}
+                              step="0.1"
+                              className="input"
+                              style={{ width: '80px' }}
+                              onChange={(e) =>
+                                handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              className="input"
+                              placeholder="Reason"
+                              onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <select
+                              className="input"
+                              onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)}
+                              defaultValue="resellable"
+                            >
+                              <option value="resellable">Resellable</option>
+                              <option value="damaged">Damaged</option>
+                              <option value="expired">Expired</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-2">
+                    <label>Refund Method</label>
+                    <select
+                      value={refundMethod}
+                      onChange={(e) => setRefundMethod(e.target.value as any)}
+                      className="input"
+                      style={{ maxWidth: '200px' }}
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="mpesa">M-Pesa</option>
+                      <option value="credit_note">Credit Note</option>
+                    </select>
+                  </div>
+                  <button className="btn btn-primary mt-4" onClick={submitReturn}>Submit Return</button>
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowReturnModal(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}
@@ -893,11 +932,18 @@ export default function POS() {
       {saleComplete && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>Sale Completed</h3>
-            <p><strong>Invoice:</strong> {saleComplete.invoice_no}</p>
-            <p><strong>Total:</strong> KES {saleComplete.total}</p>
-            <p><strong>Payment:</strong> {saleComplete.payment_method}</p>
-            <button className="btn btn-primary" onClick={() => setSaleComplete(null)}>Close</button>
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-check-circle"></i> Sale Completed</h3>
+              <button className="modal-close" onClick={() => setSaleComplete(null)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body">
+              <p><strong>Invoice:</strong> {saleComplete.invoice_no}</p>
+              <p><strong>Total:</strong> KES {saleComplete.total}</p>
+              <p><strong>Payment:</strong> {saleComplete.payment_method}</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setSaleComplete(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}
