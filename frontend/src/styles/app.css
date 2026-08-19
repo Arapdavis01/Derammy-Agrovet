@@ -831,11 +831,11 @@ label {
 /* Glassmorphism effect for dashboard cards */
 .dashboard-card,
 .summary-card {
-  background: rgba(255,255,255,0.8);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.3);
-  box-shadow: var(--box-shadow-sm);
+  background: linear-gradient(135deg, rgba(15,118,110,0.08), rgba(217,119,87,0.06));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(15,118,110,0.15);
+  box-shadow: 0 8px 32px rgba(15,118,110,0.08);
 }
 
 .dashboard-card:hover,
@@ -1421,17 +1421,20 @@ label {
   margin-bottom: 0.3rem;
 }
 
-/* ---------- Card Hover Glow ---------- */
+/* ---------- Card Hover Glow (Teal Glass) ---------- */
 .card {
-  background: var(--bg-card);
+  background: linear-gradient(135deg, rgba(15,118,110,0.08), rgba(217,119,87,0.06));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(15,118,110,0.15);
   border-radius: var(--border-radius-lg);
-  box-shadow: var(--box-shadow-sm);
+  box-shadow: 0 8px 32px rgba(15,118,110,0.08);
   padding: 1.5rem;
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .card:hover {
-  box-shadow: 0 8px 30px rgba(15,118,110,0.12);
+  box-shadow: 0 12px 40px rgba(15,118,110,0.18);
   transform: translateY(-2px);
 }
 
