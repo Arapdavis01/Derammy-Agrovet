@@ -4,14 +4,21 @@ import {
   listReturns,
   getReturn,
 } from '../controllers/returns.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate } from '../middleware/auth.middleware';
 
 const router = express.Router();
 
+// All return routes require authentication
 router.use(authenticate);
 
-router.post('/', createReturn); // cashier can process return? Possibly with permission; but we'll allow for now
+// Create a return/exchange – any authenticated user (cashier, manager, admin)
+// The controller enforces additional rules (return window, large returns, non-returnable)
+router.post('/', createReturn);
+
+// List returns – viewable by all authenticated users (cashiers see their own in frontend)
 router.get('/', listReturns);
+
+// Get single return details
 router.get('/:id', getReturn);
 
 export default router;
