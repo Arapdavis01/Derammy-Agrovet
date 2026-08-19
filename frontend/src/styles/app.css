@@ -6,10 +6,10 @@
 /* ---------- CSS Variables ---------- */
 :root {
   /* Brand Colors */
-  --primary: #0F766E;
+  --primary: #0F766E;             /* Deep Teal */
   --primary-dark: #115E59;
   --primary-light: #CCFBF1;
-  --secondary: #D97757;
+  --secondary: #D97757;           /* Terracotta */
   --secondary-dark: #B85C38;
   --secondary-light: #FFEDD5;
 
@@ -40,7 +40,7 @@
   /* Backgrounds */
   --bg-body: #FAFAF7;
   --bg-card: #FFFFFF;
-  --bg-sidebar: #0F1E2C;
+  --bg-sidebar: #0F1E2C;          /* Dark Navy */
   --bg-sidebar-hover: #1E293B;
 
   /* Typography */
@@ -319,12 +319,8 @@ label {
   border-bottom: none;
 }
 
-.table tbody tr:nth-child(even) {
-  background: #FAFAFA;
-}
-
 .table tbody tr:hover {
-  background: #F0FDFA;
+  background: #FAFAFA;
 }
 
 /* ---------- Cards & KPI (Teal Glass) ---------- */
@@ -514,43 +510,30 @@ label {
 }
 
 .modal-header {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-  color: #fff;
-  padding: 1rem 1.5rem;
-  border-bottom: none;
-  border-radius: 16px 16px 0 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--gray-200);
 }
 
 .modal-title {
-  color: #fff;
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   font-weight: 700;
+  color: var(--text-primary);
   margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
 }
 
 .modal-close {
-  background: rgba(255,255,255,0.2);
+  background: none;
   border: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 1rem;
+  font-size: 1.5rem;
+  color: var(--gray-500);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
 }
 
 .modal-close:hover {
-  background: rgba(255,255,255,0.4);
+  color: var(--danger);
 }
 
 .modal-body {
@@ -576,7 +559,7 @@ label {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ---------- Toasts ---------- */
+/* ---------- Toasts (Top‑right, colored left border) ---------- */
 .toast {
   position: fixed;
   top: 24px;
@@ -586,67 +569,27 @@ label {
   gap: 0.8rem;
   background: #fff;
   color: var(--text-primary);
-  padding: 0.9rem 1.2rem;
+  padding: 0.9rem 1.5rem;
   border-radius: 12px;
   z-index: 9999;
   box-shadow: 0 10px 40px rgba(0,0,0,0.12);
   border-left: 5px solid var(--primary);
   font-weight: 500;
   animation: toastSlideIn 0.35s ease;
-  max-width: 400px;
-}
-
-.toast-icon {
-  font-size: 1.5rem;
-  color: var(--primary);
 }
 
 .toast-success { border-left-color: var(--success); }
 .toast-error { border-left-color: var(--danger); }
 .toast-info { border-left-color: var(--info); }
 
-.toast-success .toast-icon { color: var(--success); }
-.toast-error .toast-icon { color: var(--danger); }
-.toast-info .toast-icon { color: var(--info); }
-
-.toast-close {
-  background: none;
-  border: none;
-  color: var(--gray-500);
-  cursor: pointer;
-  font-size: 1rem;
-  margin-left: auto;
-}
-
-.toast-close:hover {
-  color: var(--gray-700);
-}
-
 @keyframes toastSlideIn {
   from { opacity: 0; transform: translateX(40px); }
   to { opacity: 1; transform: translateX(0); }
 }
-
-/* ---------- Empty States ---------- */
-.empty-state {
-  text-align: center;
-  padding: 2rem;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-}
-
-.empty-state i {
-  font-size: 2.5rem;
-  display: block;
-  margin-bottom: 0.8rem;
-  opacity: 0.5;
-}
-
-.empty-state strong {
-  display: block;
-  color: var(--text-primary);
-  margin-bottom: 0.3rem;
-}
+/* ============================================
+   DERAMMY AGROVET - MODERN GLOBAL STYLESHEET
+   PART 2: LAYOUT, SIDEBAR, TOPBAR, LOGIN, DASHBOARD, POS, INVENTORY, REPORTS
+   ============================================ */
 
 /* ---------- Layout ---------- */
 .layout {
@@ -667,7 +610,7 @@ label {
   overflow-y: auto;
 }
 
-/* ---------- Sidebar ---------- */
+/* ---------- Sidebar (Dark Navy) ---------- */
 .sidebar {
   width: 250px;
   background: var(--bg-sidebar);
@@ -885,6 +828,22 @@ label {
   margin-bottom: var(--space-4);
 }
 
+/* Glassmorphism effect for dashboard cards */
+.dashboard-card,
+.summary-card {
+  background: linear-gradient(135deg, rgba(15,118,110,0.08), rgba(217,119,87,0.06));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(15,118,110,0.15);
+  box-shadow: 0 8px 32px rgba(15,118,110,0.08);
+}
+
+.dashboard-card:hover,
+.summary-card:hover {
+  box-shadow: var(--box-shadow-md);
+  transform: translateY(-4px);
+}
+
 /* ---------- POS ---------- */
 .pos-container {
   display: grid;
@@ -1073,6 +1032,7 @@ label {
   align-self: center;
 }
 
+/* POS Product Grid */
 .pos-product-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -1347,7 +1307,221 @@ label {
     font-size: 12px;
   }
 }
+/* ============================================
+   PART 3: MODERN COMPONENT ENHANCEMENTS
+   ============================================ */
 
+/* ---------- Modern Modal Header (Gradient) ---------- */
+.modal-header {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: #fff;
+  padding: 1rem 1.5rem;
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+}
+
+.modal-title {
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.modal-close {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.modal-close:hover {
+  background: rgba(255,255,255,0.4);
+}
+
+/* ---------- Toast Icons & Close Button ---------- */
+.toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: #fff;
+  color: var(--text-primary);
+  padding: 0.9rem 1.2rem;
+  border-radius: 12px;
+  z-index: 9999;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+  border-left: 5px solid var(--primary);
+  font-weight: 500;
+  animation: toastSlideIn 0.35s ease;
+  max-width: 400px;
+}
+
+.toast-icon {
+  font-size: 1.5rem;
+  color: var(--primary);
+}
+
+.toast-success { border-left-color: var(--success); }
+.toast-error { border-left-color: var(--danger); }
+.toast-info { border-left-color: var(--info); }
+
+.toast-success .toast-icon { color: var(--success); }
+.toast-error .toast-icon { color: var(--danger); }
+.toast-info .toast-icon { color: var(--info); }
+
+.toast-close {
+  background: none;
+  border: none;
+  color: var(--gray-500);
+  cursor: pointer;
+  font-size: 1rem;
+  margin-left: auto;
+}
+
+.toast-close:hover {
+  color: var(--gray-700);
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ---------- Empty States ---------- */
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.empty-state i {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.8rem;
+  opacity: 0.5;
+}
+
+.empty-state strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 0.3rem;
+}
+
+/* ---------- Card Hover Glow (Teal Glass) ---------- */
+.card {
+  background: linear-gradient(135deg, rgba(15,118,110,0.08), rgba(217,119,87,0.06));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(15,118,110,0.15);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 8px 32px rgba(15,118,110,0.08);
+  padding: 1.5rem;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.card:hover {
+  box-shadow: 0 12px 40px rgba(15,118,110,0.18);
+  transform: translateY(-2px);
+}
+
+/* ---------- Responsive Grids for Cards ---------- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.2rem;
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Glassmorphism Background for Dashboard ---------- */
+.dashboard-glass {
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(255,255,255,0.4);
+  box-shadow: var(--box-shadow-md);
+}
+
+/* ---------- Improved Tables (Zebra + Hover) ---------- */
+.table tbody tr:nth-child(even) {
+  background: #FAFAFA;
+}
+
+.table tbody tr:hover {
+  background: #F0FDFA;  /* very light teal */
+}
+
+/* ---------- Form Section Title with Icon ---------- */
+.form-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.optional-badge {
+  background: var(--secondary-light);
+  color: var(--secondary);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+  margin-top: 0.3rem;
+}
+
+/* ---------- Toggle Labels (Checkbox) ---------- */
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.toggle-text {
+  font-size: 0.9rem;
+}
 /* ============================================
    ⚡ FUTURE CUSTOM STYLES BELOW
    ============================================ */
