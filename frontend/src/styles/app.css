@@ -323,18 +323,26 @@ label {
   background: #FAFAFA;
 }
 
-/* ---------- Cards & KPI ---------- */
-.card {
-  background: var(--bg-card);
+/* ---------- Cards & KPI (Teal Glass) ---------- */
+.card,
+.dashboard-card,
+.summary-card,
+.kpi-card {
+  background: linear-gradient(135deg, rgba(15,118,110,0.08), rgba(217,119,87,0.06));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(15,118,110,0.15);
   border-radius: var(--border-radius-lg);
-  box-shadow: var(--box-shadow-sm);
-  padding: 1.5rem;
-  transition: box-shadow 0.2s, transform 0.2s;
+  box-shadow: 0 8px 32px rgba(15,118,110,0.08);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.card:hover {
-  box-shadow: var(--box-shadow-md);
-  transform: translateY(-2px);
+.card:hover,
+.dashboard-card:hover,
+.summary-card:hover,
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(15,118,110,0.18);
 }
 
 .card-title {
@@ -352,20 +360,42 @@ label {
 .kpi-card {
   text-align: center;
   padding: 1.8rem;
+  position: relative;
+  overflow: hidden;
 }
 
-.kpi-card .kpi-icon {
-  font-size: 2.2rem;
-  margin-bottom: 0.7rem;
-  color: var(--primary);
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(217,119,87,0.1), transparent 70%);
+  animation: shimmer 8s infinite;
+  pointer-events: none;
+}
+
+.kpi-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 0.8rem;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(15,118,110,0.3);
 }
 
 .kpi-card h3 {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-secondary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
   font-weight: 600;
 }
 
@@ -373,31 +403,38 @@ label {
   font-size: 2rem;
   font-weight: 700;
   color: var(--text-primary);
+  line-height: 1.2;
 }
 
+.kpi-card .subtitle {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.3rem;
+}
+
+/* Summary Card */
 .summary-card {
-  background: var(--bg-card);
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--box-shadow-sm);
   padding: 1.5rem;
   text-align: center;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.summary-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--box-shadow-md);
 }
 
 .card-icon {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 0.6rem;
+  background: rgba(15,118,110,0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: var(--primary);
 }
 
 .summary-value {
   font-size: 1.8rem;
-  font-weight: bold;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -405,6 +442,11 @@ label {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin-top: 0.3rem;
+}
+
+@keyframes shimmer {
+  0% { transform: translate(-30%, -30%) rotate(0deg); }
+  100% { transform: translate(30%, 30%) rotate(360deg); }
 }
 
 /* ---------- Alerts ---------- */
@@ -1268,123 +1310,6 @@ label {
 /* ============================================
    PART 3: MODERN COMPONENT ENHANCEMENTS
    ============================================ */
-
-/* ---------- KPI Card (Circular Icon, Glass) ---------- */
-.kpi-card {
-  background: rgba(255,255,255,0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.4);
-  border-radius: var(--border-radius-lg);
-  padding: 1.8rem;
-  text-align: center;
-  transition: transform 0.2s, box-shadow 0.2s;
-  position: relative;
-  overflow: hidden;
-}
-
-.kpi-card::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(15,118,110,0.05), transparent 70%);
-  pointer-events: none;
-  animation: shimmer 8s infinite;
-}
-
-.kpi-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 12px 40px rgba(15,118,110,0.15);
-}
-
-.kpi-icon {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 0.8rem;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.8rem;
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(15,118,110,0.25);
-}
-
-.kpi-card h3 {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-secondary);
-  margin-bottom: 0.4rem;
-  font-weight: 600;
-}
-
-.kpi-card .value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.2;
-}
-
-.kpi-card .subtitle {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-top: 0.3rem;
-}
-
-@keyframes shimmer {
-  0% { transform: translate(-30%, -30%) rotate(0deg); }
-  100% { transform: translate(30%, 30%) rotate(360deg); }
-}
-
-/* ---------- Summary Card (same glass style) ---------- */
-.summary-card {
-  background: rgba(255,255,255,0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.4);
-  border-radius: var(--border-radius-lg);
-  padding: 1.5rem;
-  text-align: center;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  position: relative;
-  overflow: hidden;
-}
-
-.summary-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(15,118,110,0.15);
-}
-
-.card-icon {
-  width: 52px;
-  height: 52px;
-  margin: 0 auto 0.6rem;
-  background: var(--primary-light);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  color: var(--primary);
-}
-
-.summary-value {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.summary-subtitle {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-top: 0.3rem;
-}
 
 /* ---------- Modern Modal Header (Gradient) ---------- */
 .modal-header {
