@@ -98,6 +98,11 @@ export default function POS() {
   const [returnSale, setReturnSale] = useState<any>(null);
   const [returnItems, setReturnItems] = useState<ReturnItemInput[]>([]);
   const [refundMethod, setRefundMethod] = useState<'cash' | 'mpesa' | 'credit_note'>('cash');
+  const [returnType, setReturnType] = useState<'return' | 'exchange'>('return');
+  const [exchangeSearch, setExchangeSearch] = useState('');
+  const [exchangeResults, setExchangeResults] = useState<Product[]>([]);
+  const [exchangeProduct, setExchangeProduct] = useState<Product | null>(null);
+  const [exchangeQty, setExchangeQty] = useState(1);
 
   const fetchAllProducts = useCallback(async () => {
     try {
@@ -343,7 +348,6 @@ export default function POS() {
       return;
     }
 
-    // Determine customer display name
     const customerName = customer?.name || customerSearch.trim() || 'Walk-in Customer';
 
     const salePayload = {
@@ -376,7 +380,6 @@ export default function POS() {
     setShowConfirmModal(true);
   };
 
-  // Confirm sale and process
   const confirmSale = async () => {
     if (!pendingSale) return;
     setLoading(true);
@@ -419,6 +422,10 @@ export default function POS() {
       const detailRes = await api.get(`/sales/${found.id}`);
       setReturnSale(detailRes.data);
       setReturnItems([]);
+      setReturnType('return');
+      setExchangeProduct(null);
+      setExchangeSearch('');
+      setExchangeQty(1);
     } catch (error) {
       toast.error('Failed to search receipt');
     }
@@ -439,6 +446,26 @@ export default function POS() {
     });
   };
 
+  const searchExchangeProducts = async (term: string) => {
+    setExchangeSearch(term);
+    if (term.trim().length < 2) {
+      setExchangeResults([]);
+      return;
+    }
+    try {
+      const res = await api.get('/products', { params: { search: term, limit: 10 } });
+      setExchangeResults(res.data.data || []);
+    } catch (error) {
+      toast.error('Failed to search products');
+    }
+  };
+
+  const selectExchangeProduct = (product: Product) => {
+    setExchangeProduct(product);
+    setExchangeSearch(product.name);
+    setExchangeResults([]);
+  };
+
   const submitReturn = async () => {
     if (!returnSale) return;
     const validItems = returnItems.filter((item) => item.quantity > 0);
@@ -446,18 +473,32 @@ export default function POS() {
       toast.error('Select at least one item with quantity');
       return;
     }
+
+    const payload: any = {
+      sale_id: returnSale.id,
+      items: validItems,
+      refund_method: refundMethod,
+      reason: 'Return from POS',
+      return_type: returnType,
+    };
+
+    if (returnType === 'exchange') {
+      if (!exchangeProduct) {
+        toast.error('Select exchange product');
+        return;
+      }
+      payload.exchange_product_id = exchangeProduct.id;
+      payload.exchange_quantity = exchangeQty;
+    }
+
     try {
-      await api.post('/returns', {
-        sale_id: returnSale.id,
-        items: validItems,
-        refund_method: refundMethod,
-        reason: 'Return from POS',
-      });
-      toast.success('Return processed successfully');
+      await api.post('/returns', payload);
+      toast.success('Return/Exchange processed successfully');
       setShowReturnModal(false);
       setReturnInvoice('');
       setReturnSale(null);
       setReturnItems([]);
+      setExchangeProduct(null);
       fetchAllProducts();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to process return');
@@ -765,43 +806,19 @@ export default function POS() {
             <div className="modal-body">
               <div className="form-group">
                 <label>Name *</label>
-                <input
-                  type="text"
-                  value={customerForm.name}
-                  onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
-                  className="input"
-                />
+                <input type="text" value={customerForm.name} onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })} className="input" />
               </div>
               <div className="form-group">
                 <label>Phone</label>
-                <input
-                  type="text"
-                  value={customerForm.phone}
-                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
-                  className="input"
-                />
+                <input type="text" value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} className="input" />
               </div>
               <div className="form-group">
                 <label>Address</label>
-                <input
-                  type="text"
-                  value={customerForm.address}
-                  onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })}
-                  className="input"
-                />
+                <input type="text" value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} className="input" />
               </div>
               <div className="form-group">
                 <label>Credit Limit (KES)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={customerForm.credit_limit}
-                  onChange={(e) =>
-                    setCustomerForm({ ...customerForm, credit_limit: parseFloat(e.target.value) || 0 })
-                  }
-                  className="input"
-                />
+                <input type="number" min="0" step="0.01" value={customerForm.credit_limit} onChange={(e) => setCustomerForm({ ...customerForm, credit_limit: parseFloat(e.target.value) || 0 })} className="input" />
               </div>
             </div>
             <div className="modal-footer">
@@ -829,14 +846,9 @@ export default function POS() {
                     <div className="flex justify-between items-center">
                       <div>
                         <strong>Cart #{hc.id}</strong>
-                        <span className="text-muted">
-                          {new Date(hc.timestamp).toLocaleTimeString()}
-                        </span>
+                        <span className="text-muted">{new Date(hc.timestamp).toLocaleTimeString()}</span>
                         {hc.customer && <span> | {hc.customer.name}</span>}
-                        <p>
-                          Items: {hc.cart.reduce((sum, item) => sum + item.quantity, 0)} | Total: KES{' '}
-                          {hc.cart.reduce((sum, item) => sum + item.quantity * item.product.selling_price, 0).toFixed(2)}
-                        </p>
+                        <p>Items: {hc.cart.reduce((sum, item) => sum + item.quantity, 0)} | Total: KES {hc.cart.reduce((sum, item) => sum + item.quantity * item.product.selling_price, 0).toFixed(2)}</p>
                       </div>
                       <div className="flex gap-2">
                         <button className="btn btn-sm btn-primary" onClick={() => resumeHeldCart(hc.id)}>Resume</button>
@@ -864,19 +876,24 @@ export default function POS() {
             </div>
             <div className="modal-body">
               <div className="flex gap-2 mb-4">
-                <input
-                  type="text"
-                  placeholder="Enter receipt number"
-                  value={returnInvoice}
-                  onChange={(e) => setReturnInvoice(e.target.value)}
-                  className="input"
-                />
+                <input type="text" placeholder="Enter receipt number" value={returnInvoice} onChange={(e) => setReturnInvoice(e.target.value)} className="input" />
                 <button className="btn btn-outline" onClick={searchReturnSale}>Search</button>
               </div>
               {returnSale && (
                 <>
                   <p><strong>Invoice:</strong> {returnSale.invoice_no}</p>
                   <p><strong>Customer:</strong> {returnSale.customer?.name || returnSale.customer_name || 'Walk-in'}</p>
+                  <p><strong>Date:</strong> {new Date(returnSale.sale_date).toLocaleDateString()}</p>
+                  <p><strong>Total:</strong> KES {returnSale.total}</p>
+
+                  <div className="form-group">
+                    <label>Return Type</label>
+                    <select value={returnType} onChange={(e) => setReturnType(e.target.value as any)} className="input">
+                      <option value="return">Return</option>
+                      <option value="exchange">Exchange</option>
+                    </select>
+                  </div>
+
                   <table className="table mt-4">
                     <thead>
                       <tr>
@@ -893,32 +910,13 @@ export default function POS() {
                           <td>{item.product.name}</td>
                           <td>{item.quantity} {item.product.unit}</td>
                           <td>
-                            <input
-                              type="number"
-                              min="0"
-                              max={item.quantity}
-                              step="0.1"
-                              className="input"
-                              style={{ width: '80px' }}
-                              onChange={(e) =>
-                                handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)
-                              }
-                            />
+                            <input type="number" min="0" max={item.quantity} step="0.1" className="input" style={{ width: '80px' }} onChange={(e) => handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} />
                           </td>
                           <td>
-                            <input
-                              type="text"
-                              className="input"
-                              placeholder="Reason"
-                              onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)}
-                            />
+                            <input type="text" className="input" placeholder="Reason" onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)} />
                           </td>
                           <td>
-                            <select
-                              className="input"
-                              onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)}
-                              defaultValue="resellable"
-                            >
+                            <select className="input" onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)} defaultValue="resellable">
                               <option value="resellable">Resellable</option>
                               <option value="damaged">Damaged</option>
                               <option value="expired">Expired</option>
@@ -928,20 +926,41 @@ export default function POS() {
                       ))}
                     </tbody>
                   </table>
-                  <div className="mt-2">
+
+                  {returnType === 'exchange' && (
+                    <div className="mt-4">
+                      <label>Exchange Product</label>
+                      <input type="text" placeholder="Search product..." value={exchangeSearch} onChange={(e) => searchExchangeProducts(e.target.value)} className="input" />
+                      {exchangeResults.length > 0 && (
+                        <div className="pos-search-results">
+                          {exchangeResults.map((product) => (
+                            <div key={product.id} className="pos-search-item" onClick={() => selectExchangeProduct(product)}>
+                              <span>{product.name}</span>
+                              <span>KES {product.selling_price}/{product.unit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {exchangeProduct && (
+                        <div className="mt-2">
+                          <p><strong>Exchange:</strong> {exchangeProduct.name} - KES {exchangeProduct.selling_price}</p>
+                          <label>Quantity</label>
+                          <input type="number" min="1" value={exchangeQty} onChange={(e) => setExchangeQty(parseInt(e.target.value) || 1)} className="input" style={{ width: '100px' }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-4">
                     <label>Refund Method</label>
-                    <select
-                      value={refundMethod}
-                      onChange={(e) => setRefundMethod(e.target.value as any)}
-                      className="input"
-                      style={{ maxWidth: '200px' }}
-                    >
+                    <select value={refundMethod} onChange={(e) => setRefundMethod(e.target.value as any)} className="input" style={{ maxWidth: '200px' }}>
                       <option value="cash">Cash</option>
                       <option value="mpesa">M-Pesa</option>
                       <option value="credit_note">Credit Note</option>
                     </select>
                   </div>
-                  <button className="btn btn-primary mt-4" onClick={submitReturn}>Submit Return</button>
+
+                  <button className="btn btn-primary mt-4" onClick={submitReturn}>Process Return/Exchange</button>
                 </>
               )}
             </div>
@@ -1012,12 +1031,7 @@ export default function POS() {
               <p>Cashier: {receiptData.user?.full_name || 'Antony'}</p>
               <table className="table mt-2">
                 <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Total</th>
-                  </tr>
+                  <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
                 </thead>
                 <tbody>
                   {receiptData.sale_items.map((item: any) => (
@@ -1039,9 +1053,7 @@ export default function POS() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setReceiptData(null)}>Close</button>
-              <button className="btn btn-primary" onClick={printReceipt}>
-                <i className="fas fa-print"></i> Print
-              </button>
+              <button className="btn btn-primary" onClick={printReceipt}><i className="fas fa-print"></i> Print</button>
             </div>
           </div>
         </div>
