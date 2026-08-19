@@ -1,17 +1,21 @@
 import { Request, Response } from 'express';
 import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
-import { addStock } from '../services/stock.service';
+import { addStock, reduceStock } from '../services/stock.service';
 
-// Create a return for a sale
+// Create a return or exchange for a sale
 export const createReturn = async (req: Request, res: Response) => {
   const {
     sale_id,
     items, // [{ sale_item_id, quantity, reason, condition }]
+    return_type = 'return', // 'return' | 'exchange'
+    exchange_product_id,
+    exchange_quantity = 1,
     refund_method = 'cash',
   } = req.body;
 
   const userId = (req as any).user.id;
+  const userRole = (req as any).user.role;
 
   if (!sale_id) throw new AppError('Sale ID is required', 400);
   if (!items || items.length === 0) throw new AppError('No items to return', 400);
@@ -27,6 +31,14 @@ export const createReturn = async (req: Request, res: Response) => {
   if (sale.sale_status === 'voided') throw new AppError('Sale is voided', 400);
   if (sale.sale_status === 'refunded') throw new AppError('Sale already refunded', 400);
 
+  // Check return window (2 days)
+  const saleDate = new Date(sale.sale_date);
+  const now = new Date();
+  const daysDifference = Math.floor((now.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysDifference > 2 && userRole !== 'admin' && userRole !== 'manager') {
+    throw new AppError('Return window expired. Supervisor/manager approval required.', 403);
+  }
+
   // Fetch sale items
   const { data: saleItems, error: itemsError } = await supabaseAdmin
     .from('sale_items')
@@ -35,13 +47,23 @@ export const createReturn = async (req: Request, res: Response) => {
 
   if (itemsError) throw new AppError('Failed to fetch sale items', 500);
 
-  // Validate requested items and calculate refund total
+  // Validate requested items, check non-returnable, and calculate refund total
   let totalRefund = 0;
   const returnItemsData = [];
 
   for (const returnItem of items) {
     const saleItem = saleItems.find((si: any) => si.id === returnItem.sale_item_id);
     if (!saleItem) throw new AppError(`Sale item not found: ${returnItem.sale_item_id}`, 404);
+
+    // Check if product is returnable
+    const { data: product } = await supabaseAdmin
+      .from('products')
+      .select('is_returnable')
+      .eq('id', saleItem.product_id)
+      .single();
+    if (product && product.is_returnable === false) {
+      throw new AppError(`Product is non-returnable`, 400);
+    }
 
     if (returnItem.quantity <= 0 || returnItem.quantity > saleItem.quantity) {
       throw new AppError(`Invalid quantity for item ${saleItem.product_id}`, 400);
@@ -61,6 +83,30 @@ export const createReturn = async (req: Request, res: Response) => {
     });
   }
 
+  // Large return approval check (example threshold: KES 10,000)
+  const LARGE_RETURN_THRESHOLD = 10000;
+  if (totalRefund > LARGE_RETURN_THRESHOLD && userRole !== 'admin' && userRole !== 'manager') {
+    throw new AppError('Large return requires supervisor/manager approval', 403);
+  }
+
+  // Handle exchange product and price difference
+  let exchangeProduct = null;
+  let exchangeTotal = 0;
+  let priceDifference = 0;
+
+  if (return_type === 'exchange') {
+    if (!exchange_product_id) throw new AppError('Exchange product is required', 400);
+    const { data: exchangeProductData, error: exchangeProductError } = await supabaseAdmin
+      .from('products')
+      .select('*')
+      .eq('id', exchange_product_id)
+      .single();
+    if (exchangeProductError || !exchangeProductData) throw new AppError('Exchange product not found', 404);
+    exchangeProduct = exchangeProductData;
+    exchangeTotal = Number(exchangeProductData.selling_price) * Number(exchange_quantity || 1);
+    priceDifference = exchangeTotal - totalRefund;
+  }
+
   // Insert return record
   const { data: returnRecord, error: returnError } = await supabaseAdmin
     .from('returns')
@@ -72,15 +118,19 @@ export const createReturn = async (req: Request, res: Response) => {
       total_refund: totalRefund,
       refund_method,
       status: 'completed',
+      return_type,
+      exchange_product_id: exchange_product_id || null,
+      exchange_quantity: exchange_product_id ? (exchange_quantity || 1) : null,
+      exchange_amount: exchangeTotal || null,
+      price_difference: priceDifference || 0,
     })
     .select()
     .single();
 
   if (returnError) throw new AppError('Failed to create return', 500);
 
-  // Process each return item
+  // Process returned items
   for (const item of returnItemsData) {
-    // Insert return item
     const { error: insertItemError } = await supabaseAdmin
       .from('return_items')
       .insert({
@@ -94,7 +144,6 @@ export const createReturn = async (req: Request, res: Response) => {
       });
 
     if (insertItemError) {
-      // Rollback return
       await supabaseAdmin.from('returns').delete().eq('id', returnRecord.id);
       throw new AppError('Failed to insert return item', 500);
     }
@@ -119,7 +168,24 @@ export const createReturn = async (req: Request, res: Response) => {
     }
   }
 
-  // If credit sale or had credit component, reduce customer balance if credit note
+  // If exchange, reduce stock of exchange product
+  if (return_type === 'exchange' && exchangeProduct) {
+    try {
+      await reduceStock(
+        exchangeProduct.id,
+        exchange_quantity || 1,
+        undefined,
+        userId,
+        returnRecord.id
+      );
+    } catch (e: any) {
+      // Rollback return
+      await supabaseAdmin.from('returns').delete().eq('id', returnRecord.id);
+      throw e;
+    }
+  }
+
+  // If credit sale or had credit component, adjust customer balance if credit note
   if (sale.payment_status === 'credit' || sale.payment_method === 'mixed') {
     if (refund_method === 'credit_note' && sale.customer_id) {
       const { data: customer } = await supabaseAdmin
@@ -144,7 +210,8 @@ export const createReturn = async (req: Request, res: Response) => {
       return_items(
         id, sale_item_id, product_id, batch_id, quantity, condition, refund_amount,
         product:products(id, name, unit)
-      )
+      ),
+      exchange_product:products!returns_exchange_product_id_fkey(id, name, unit, selling_price)
     `)
     .eq('id', returnRecord.id)
     .single();
@@ -163,7 +230,8 @@ export const listReturns = async (req: Request, res: Response) => {
   let query = supabaseAdmin
     .from('returns')
     .select(`
-      id, sale_id, customer_id, user_id, return_date, reason, total_refund, refund_method, status,
+      id, sale_id, customer_id, user_id, return_date, reason, total_refund, refund_method, status, return_type,
+      exchange_product_id, exchange_quantity, exchange_amount, price_difference,
       customer:customers(id, name),
       user:users(id, full_name)
     `, { count: 'exact' })
@@ -193,7 +261,8 @@ export const getReturn = async (req: Request, res: Response) => {
         id, sale_item_id, product_id, batch_id, quantity, condition, refund_amount,
         product:products(id, name, unit)
       ),
-      sale:sales(id, invoice_no)
+      sale:sales(id, invoice_no),
+      exchange_product:products!returns_exchange_product_id_fkey(id, name, unit, selling_price)
     `)
     .eq('id', id)
     .single();
