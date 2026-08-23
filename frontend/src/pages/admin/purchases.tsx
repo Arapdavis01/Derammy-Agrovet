@@ -174,7 +174,6 @@ export default function AdminPurchases() {
       });
 
       toast.success('Purchase order submitted');
-      // Reset form
       setPurchaseItems([]);
       setSelectedSupplier('');
       setNotes('');
@@ -187,7 +186,6 @@ export default function AdminPurchases() {
     }
   };
 
-  // Supplier modal handlers
   const openSupplierModal = () => setShowSupplierModal(true);
   const closeSupplierModal = () => setShowSupplierModal(false);
 
@@ -207,7 +205,6 @@ export default function AdminPurchases() {
     }
   };
 
-  // Grouping logic
   const filteredPurchases = useMemo(() => {
     return purchases.filter((p) => {
       const supplierName = p.supplier?.name || '';
@@ -237,7 +234,10 @@ export default function AdminPurchases() {
     <Layout>
       {/* Create Purchase Order Section */}
       <div className="card">
-        <h2 className="card-title"><i className="fas fa-cart-plus" style={{ marginRight: '8px' }}></i>Create Purchase Order</h2>
+        <h2 className="card-title">
+          <i className="fas fa-cart-plus" style={{ marginRight: '8px' }}></i>
+          Create Purchase Order
+        </h2>
 
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
@@ -301,7 +301,6 @@ export default function AdminPurchases() {
           )}
         </div>
 
-        {/* Items table */}
         {purchaseItems.length > 0 ? (
           <table className="table mt-4">
             <thead>
@@ -377,7 +376,6 @@ export default function AdminPurchases() {
           <p className="alert alert-info mt-4">No items added yet.</p>
         )}
 
-        {/* Totals */}
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
             <label>Overall Discount (KES)</label>
@@ -500,37 +498,72 @@ export default function AdminPurchases() {
         )}
       </div>
 
-      {/* New Supplier Modal */}
+      {/* New Supplier Modal (Modern) */}
       {showSupplierModal && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>New Supplier</h3>
-            <div className="flex flex-col gap-2">
-              <label>Name</label>
-              <input
-                type="text"
-                value={supplierForm.name}
-                onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
-                className="input"
-              />
-              <label>Phone</label>
-              <input
-                type="text"
-                value={supplierForm.phone}
-                onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
-                className="input"
-              />
-              <label>Address</label>
-              <input
-                type="text"
-                value={supplierForm.address}
-                onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
-                className="input"
-              />
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fas fa-truck"></i> New Supplier
+              </h3>
+              <button className="modal-close" onClick={closeSupplierModal} aria-label="Close">
+                <i className="fas fa-times"></i>
+              </button>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitSupplier}>Save</button>
-              <button className="btn btn-outline" onClick={closeSupplierModal}>Cancel</button>
+
+            <div className="modal-body">
+              <div className="form-group">
+                <label>
+                  <i className="fas fa-building" style={{ marginRight: '6px' }}></i>
+                  Supplier Name *
+                </label>
+                <input
+                  type="text"
+                  value={supplierForm.name}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
+                  className="input"
+                  placeholder="e.g., Agrovet Supplies Ltd"
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label>
+                  <i className="fas fa-phone-alt" style={{ marginRight: '6px' }}></i>
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={supplierForm.phone}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                  className="input"
+                  placeholder="e.g., 0712345678"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>
+                  <i className="fas fa-map-marker-alt" style={{ marginRight: '6px' }}></i>
+                  Address
+                </label>
+                <input
+                  type="text"
+                  value={supplierForm.address}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
+                  className="input"
+                  placeholder="e.g., Nandi Hills, Kenya"
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={closeSupplierModal}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={submitSupplier}>
+                <i className="fas fa-save" style={{ marginRight: '6px' }}></i>
+                Save Supplier
+              </button>
             </div>
           </div>
         </div>
