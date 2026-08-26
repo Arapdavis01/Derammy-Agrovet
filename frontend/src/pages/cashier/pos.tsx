@@ -44,7 +44,6 @@ interface HeldCart {
 interface Cashier {
   id: string;
   full_name: string;
-  username?: string;
 }
 
 interface ReturnItemInput {
@@ -138,7 +137,7 @@ export default function POS() {
 
   const fetchCashiers = useCallback(async () => {
     try {
-      const res = await api.get('/users/cashiers');
+      const res = await api.get('/cashiers/active');
       setCashiers(res.data || []);
     } catch (error) {
       toast.error('Failed to load cashiers');
@@ -340,7 +339,6 @@ export default function POS() {
     setHeldCarts(heldCarts.filter((hc) => hc.id !== heldCartId));
   };
 
-  // Step 1: Validate cart and open cashier selection modal
   const handleCompleteSale = () => {
     if (cart.length === 0) {
       toast.error('Cart is empty');
@@ -358,7 +356,6 @@ export default function POS() {
     setShowCashierModal(true);
   };
 
-  // Step 2: After selecting cashier, prepare payload and show confirmation
   const confirmCashierAndProceed = () => {
     if (!selectedCashierId) {
       toast.error('Select your name');
