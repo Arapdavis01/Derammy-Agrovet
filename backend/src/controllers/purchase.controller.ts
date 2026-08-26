@@ -101,12 +101,13 @@ export const createPurchase = async (req: Request, res: Response) => {
     }
   }
 
-  // Fetch complete purchase
+  // Fetch complete purchase with user name
   const { data: fullPurchase, error: fetchError } = await supabaseAdmin
     .from('purchases')
     .select(`
       *,
       supplier:suppliers(id, name),
+      user:users(id, full_name),
       purchase_items(
         id, product_id, batch_id, quantity, cost_price, total,
         product:products(id, name, unit)
@@ -143,7 +144,13 @@ export const listPurchases = async (req: Request, res: Response) => {
   const { data, error, count } = await query;
 
   if (error) throw new AppError('Failed to fetch purchases', 500);
-  res.json({ data, total: count || 0, page: pageNum, limit: limitNum, totalPages: Math.ceil((count || 0) / limitNum) });
+  res.json({
+    data,
+    total: count || 0,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: Math.ceil((count || 0) / limitNum),
+  });
 };
 
 // Get purchase details
@@ -154,6 +161,7 @@ export const getPurchase = async (req: Request, res: Response) => {
     .select(`
       *,
       supplier:suppliers(id, name),
+      user:users(id, full_name),
       purchase_items(
         id, product_id, batch_id, quantity, cost_price, total,
         product:products(id, name, unit)
