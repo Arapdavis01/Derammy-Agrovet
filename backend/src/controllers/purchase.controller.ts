@@ -109,14 +109,14 @@ export const createPurchase = async (req: Request, res: Response) => {
     }
   }
 
-  // Fetch complete purchase
+  // Fetch complete purchase with cashier names
   const { data: fullPurchase, error: fetchError } = await supabaseAdmin
     .from('purchases')
     .select(`
       *,
       supplier:suppliers(id, name),
       user:users(id, full_name),
-      requested_by_user:users!purchases_requested_by_fkey(id, full_name),
+      requested_by_user:cashiers!purchases_requested_by_fkey(id, full_name),
       purchase_items(
         id, product_id, batch_id, quantity, cost_price, total,
         product:products(id, name, unit)
@@ -143,8 +143,8 @@ export const listPurchases = async (req: Request, res: Response) => {
       requested_by, received_by,
       supplier:suppliers(id, name),
       user:users(id, full_name),
-      requested_by_user:users!purchases_requested_by_fkey(id, full_name),
-      received_by_user:users!purchases_received_by_fkey(id, full_name)
+      requested_by_user:cashiers!purchases_requested_by_fkey(id, full_name),
+      received_by_user:cashiers!purchases_received_by_fkey(id, full_name)
     `, { count: 'exact' })
     .order('purchase_date', { ascending: false })
     .range(offset, offset + limitNum - 1);
@@ -174,8 +174,8 @@ export const getPurchase = async (req: Request, res: Response) => {
       *,
       supplier:suppliers(id, name),
       user:users(id, full_name),
-      requested_by_user:users!purchases_requested_by_fkey(id, full_name),
-      received_by_user:users!purchases_received_by_fkey(id, full_name),
+      requested_by_user:cashiers!purchases_requested_by_fkey(id, full_name),
+      received_by_user:cashiers!purchases_received_by_fkey(id, full_name),
       purchase_items(
         id, product_id, batch_id, quantity, cost_price, total,
         product:products(id, name, unit)
