@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   listUsers,
+  listCashiers,
   createUser,
   updateUser,
   resetPassword,
@@ -10,9 +11,11 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 
 const router = express.Router();
 
-// All user routes require authentication and admin role
-router.use(authenticate, authorize('admin'));
+// Cashier list – accessible by any authenticated user (for POS selection)
+router.get('/cashiers', authenticate, listCashiers);
 
+// Admin-only routes
+router.use(authenticate, authorize('admin'));
 router.get('/', listUsers);
 router.post('/', createUser);
 router.put('/:id', updateUser);
