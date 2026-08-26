@@ -29,7 +29,7 @@ export const createSale = async (req: Request, res: Response) => {
     discount = 0,
     tax = 0,
     sale_status = 'completed',
-    cashier_id, // NEW: selected cashier from POS
+    cashier_id, // selected cashier from cashiers table
   } = req.body as any;
 
   const userId = (req as any).user.id;
@@ -126,7 +126,7 @@ export const createSale = async (req: Request, res: Response) => {
   // Generate invoice number
   const invoice_no = await generateInvoiceNo();
 
-  // Insert sale record (include cashier_id)
+  // Insert sale record
   const { data: sale, error: saleError } = await supabaseAdmin
     .from('sales')
     .insert({
@@ -134,7 +134,7 @@ export const createSale = async (req: Request, res: Response) => {
       customer_id: customer_id || null,
       customer_name: customer_name || null,
       user_id: userId,
-      cashier_id: cashier_id || null, // store selected cashier
+      cashier_id: cashier_id || null,
       subtotal: subtotalExclVAT,
       discount,
       tax: vatAmount,
@@ -216,13 +216,13 @@ export const createSale = async (req: Request, res: Response) => {
     }
   }
 
-  // Fetch complete sale with items and cashier info
+  // Fetch complete sale with cashier name from cashiers table
   const { data: fullSale, error: fetchError } = await supabaseAdmin
     .from('sales')
     .select(`
       *,
       customer:customers(id, name),
-      cashier:users!sales_cashier_id_fkey(id, full_name),
+      cashier:cashiers!sales_cashier_id_fkey(id, full_name),
       sale_items(
         id, product_id, batch_id, quantity, unit_price, discount, total,
         product:products(id, name, unit)
@@ -261,7 +261,7 @@ export const listSales = async (req: Request, res: Response) => {
       id, invoice_no, customer_id, customer_name, user_id, cashier_id, sale_date, subtotal, discount, tax, total, amount_paid, payment_status, sale_status, payment_method,
       customer:customers(id, name),
       user:users(id, full_name),
-      cashier:users!sales_cashier_id_fkey(id, full_name)
+      cashier:cashiers!sales_cashier_id_fkey(id, full_name)
     `, { count: 'exact' })
     .order('sale_date', { ascending: false })
     .range(offset, offset + limitNum - 1);
@@ -295,7 +295,7 @@ export const getSale = async (req: Request, res: Response) => {
       *,
       customer:customers(id, name),
       user:users(id, full_name),
-      cashier:users!sales_cashier_id_fkey(id, full_name),
+      cashier:cashiers!sales_cashier_id_fkey(id, full_name),
       sale_items(
         id, product_id, batch_id, quantity, unit_price, discount, total,
         product:products(id, name, unit),
