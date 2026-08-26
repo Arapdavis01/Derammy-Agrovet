@@ -15,6 +15,19 @@ export const listUsers = async (req: Request, res: Response) => {
   res.json(data);
 };
 
+// List all active cashiers (for POS cashier selection)
+export const listCashiers = async (req: Request, res: Response) => {
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .select('id, full_name, username')
+    .eq('role', 'cashier')
+    .eq('status', 'active')
+    .order('full_name', { ascending: true });
+
+  if (error) throw new AppError('Failed to fetch cashiers', 500);
+  res.json(data);
+};
+
 // Create new user (admin only)
 export const createUser = async (req: Request, res: Response) => {
   const { fullName, username, password, role } = req.body;
