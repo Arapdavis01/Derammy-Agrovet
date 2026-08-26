@@ -15,10 +15,12 @@ interface Supplier {
 interface Product {
   id: string;
   name: string;
+  sku: string;
   unit: string;
   cost_price: number;
   selling_price: number;
   track_batch_expiry: boolean;
+  total_stock?: number;
 }
 
 interface Cashier {
@@ -40,6 +42,7 @@ interface Purchase {
   purchase_date: string;
   total: number;
   status: string;
+  po_number: string;
   supplier: { id: string; name: string } | null;
   requested_by?: { full_name: string } | null;
   received_by?: { full_name: string } | null;
@@ -60,7 +63,7 @@ export default function AdminPurchases() {
   const [discountType, setDiscountType] = useState<'kes' | 'pct'>('kes');
   const [creating, setCreating] = useState(false);
 
-  // Cashier selection for request/receive tracking
+  // Cashiers
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [requestedBy, setRequestedBy] = useState('');
 
@@ -71,23 +74,25 @@ export default function AdminPurchases() {
   const [modalBuyPrice, setModalBuyPrice] = useState(0);
   const [modalDiscount, setModalDiscount] = useState(0);
 
-  // Supplier modal states
+  // Supplier modal
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', address: '' });
 
-  // History states
+  // History
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatus, setHistoryStatus] = useState('');
   const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Success modal
+  const [successMessage, setSuccessMessage] = useState('');
+
   useEffect(() => {
     if (!user) {
       router.push('/login');
       return;
     }
-    // Allow both admin/manager and cashier
     fetchInitialData();
   }, [user]);
 
@@ -108,9 +113,7 @@ export default function AdminPurchases() {
     try {
       const res = await api.get('/users/cashiers');
       setCashiers(res.data || []);
-    } catch (error) {
-      // silent
-    }
+    } catch (error) {}
   };
 
   const fetchHistory = async () => {
@@ -129,8 +132,21 @@ export default function AdminPurchases() {
     setProductSearch(term);
     if (term.trim().length > 0 && selectedSupplier) {
       try {
-        const res = await api.get('/products', { params: { search: term, limit: 10 } });
-        setSearchResults(res.data.data);
+        const [productsRes, inventoryRes] = await Promise.all([
+          api.get('/products', { params: { search: term, limit: 10 } }),
+          api.get('/inventory'),
+        ]);
+        const products = productsRes.data.data || [];
+        const inventory = inventoryRes.data || [];
+        const stockMap: Record<string, number> = {};
+        inventory.forEach((item: any) => {
+          stockMap[item.id] = item.total_stock || 0;
+        });
+        const merged = products.map((p: Product) => ({
+          ...p,
+          total_stock: stockMap[p.id] || 0,
+        }));
+        setSearchResults(merged);
       } catch (error) {
         toast.error('Failed to search products');
       }
@@ -178,7 +194,6 @@ export default function AdminPurchases() {
     setPurchaseItems(purchaseItems.filter((item) => item.product.id !== productId));
   };
 
-  // Calculations
   const subtotal = purchaseItems.reduce((sum, item) => sum + item.quantity * item.cost_price, 0);
   const computedDiscount =
     discountType === 'pct' ? subtotal * (overallDiscount / 100) : overallDiscount;
@@ -212,15 +227,15 @@ export default function AdminPurchases() {
         expiry_date: item.expiry_date,
       }));
 
-      await api.post('/purchases', {
+      const res = await api.post('/purchases', {
         supplier_id: selectedSupplier,
         items,
-        status: 'pending', // changed to pending
+        status: 'pending',
         requested_by: requestedBy,
         total: totalBuy,
       });
 
-      toast.success('Purchase order submitted (pending)');
+      setSuccessMessage(`PO ${res.data.po_number} created!`);
       setPurchaseItems([]);
       setSelectedSupplier('');
       setNotes('');
@@ -235,8 +250,7 @@ export default function AdminPurchases() {
   };
 
   const receivePurchase = async (purchaseId: string) => {
-    const { user } = useAuth();
-    const receivedBy = user?.id; // current logged-in user receives
+    const receivedBy = user?.id;
     try {
       await api.put(`/purchases/${purchaseId}/receive`, { received_by: receivedBy });
       toast.success('Stock received successfully');
@@ -270,6 +284,7 @@ export default function AdminPurchases() {
       const supplierName = p.supplier?.name || '';
       const matchesSearch =
         supplierName.toLowerCase().includes(historySearch.toLowerCase()) ||
+        p.po_number?.toLowerCase().includes(historySearch.toLowerCase()) ||
         p.id.toLowerCase().includes(historySearch.toLowerCase());
       const matchesStatus = historyStatus ? p.status === historyStatus : true;
       return matchesSearch && matchesStatus;
@@ -292,60 +307,35 @@ export default function AdminPurchases() {
 
   return (
     <Layout>
-      {/* Create Purchase Order Section */}
+      {/* Create Purchase Order */}
       <div className="card">
-        <h2 className="card-title">
-          <i className="fas fa-cart-plus" style={{ marginRight: '8px' }}></i>
-          Create Purchase Order
-        </h2>
+        <h2 className="card-title"><i className="fas fa-cart-plus"></i> Create Purchase Order</h2>
 
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
             <label>Supplier *</label>
-            <select
-              value={selectedSupplier}
-              onChange={(e) => {
-                setSelectedSupplier(e.target.value);
-                setSearchResults([]);
-                setProductSearch('');
-              }}
-              className="input"
-            >
+            <select value={selectedSupplier} onChange={(e) => { setSelectedSupplier(e.target.value); setSearchResults([]); setProductSearch(''); }} className="input">
               <option value="">Select Supplier...</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
             <label>Notes</label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="input"
-              placeholder="Order notes..."
-            />
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="input" placeholder="Order notes..." />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mt-2">
           <div>
             <label>Requested By *</label>
-            <select
-              value={requestedBy}
-              onChange={(e) => setRequestedBy(e.target.value)}
-              className="input"
-            >
+            <select value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} className="input">
               <option value="">Select cashier...</option>
-              {cashiers.map((c) => (
-                <option key={c.id} value={c.id}>{c.full_name}</option>
-              ))}
+              {cashiers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
             </select>
           </div>
-          <div>
+          <div className="flex items-end">
             <button className="btn btn-outline btn-sm" onClick={openSupplierModal}>
-              <i className="fas fa-plus" style={{ marginRight: '4px' }}></i> New Supplier
+              <i className="fas fa-plus"></i> New Supplier
             </button>
           </div>
         </div>
@@ -367,7 +357,7 @@ export default function AdminPurchases() {
                   <div className="pos-product-info">
                     <span className="pos-product-name">{product.name}</span>
                     <span className="pos-product-stock">
-                      Buy: KES {product.cost_price}/{product.unit} | Sell: KES {product.selling_price}/{product.unit}
+                      Buy: KES {product.cost_price}/{product.unit} | Sell: KES {product.selling_price}/{product.unit} | Stock: {product.total_stock ?? 0} {product.unit}
                     </span>
                   </div>
                 </div>
@@ -379,70 +369,19 @@ export default function AdminPurchases() {
         {purchaseItems.length > 0 ? (
           <table className="table mt-4">
             <thead>
-              <tr>
-                <th>Product</th>
-                <th>Quantity</th>
-                <th>Buy Price</th>
-                <th>Batch Number</th>
-                <th>Expiry Date</th>
-                <th>Total</th>
-                <th></th>
-              </tr>
+              <tr><th>Product</th><th>Qty</th><th>Unit</th><th>Buy Price</th><th>Sell Price</th><th>Discount</th><th>Total</th><th></th></tr>
             </thead>
             <tbody>
               {purchaseItems.map((item) => (
                 <tr key={item.product.id}>
                   <td>{item.product.name}</td>
-                  <td>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(item.product.id, 'quantity', parseFloat(e.target.value) || 0)}
-                      className="input"
-                      style={{ width: '80px' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.cost_price}
-                      onChange={(e) => updateItem(item.product.id, 'cost_price', parseFloat(e.target.value) || 0)}
-                      className="input"
-                      style={{ width: '100px' }}
-                    />
-                  </td>
-                  <td>
-                    {item.product.track_batch_expiry ? (
-                      <input
-                        type="text"
-                        value={item.batch_number || ''}
-                        onChange={(e) => updateItem(item.product.id, 'batch_number', e.target.value)}
-                        className="input"
-                        style={{ width: '120px' }}
-                      />
-                    ) : '-'}
-                  </td>
-                  <td>
-                    {item.product.track_batch_expiry ? (
-                      <input
-                        type="date"
-                        value={item.expiry_date || ''}
-                        onChange={(e) => updateItem(item.product.id, 'expiry_date', e.target.value)}
-                        className="input"
-                        style={{ width: '140px' }}
-                      />
-                    ) : '-'}
-                  </td>
+                  <td><input type="number" min="0.1" step="0.1" value={item.quantity} onChange={(e) => updateItem(item.product.id, 'quantity', parseFloat(e.target.value) || 0)} className="input" style={{ width: '70px' }} /></td>
+                  <td>{item.product.unit}</td>
+                  <td>KES {item.cost_price}</td>
+                  <td>KES {item.product.selling_price}</td>
+                  <td>0</td>
                   <td>KES {(item.quantity * item.cost_price).toFixed(2)}</td>
-                  <td>
-                    <button className="btn btn-sm btn-danger" onClick={() => removeItem(item.product.id)}>
-                      <i className="fas fa-times"></i>
-                    </button>
-                  </td>
+                  <td><button className="btn btn-sm btn-danger" onClick={() => removeItem(item.product.id)}><i className="fas fa-times"></i></button></td>
                 </tr>
               ))}
             </tbody>
@@ -461,20 +400,13 @@ export default function AdminPurchases() {
           </div>
           <div>
             <label>Overall Discount</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={overallDiscount}
-              onChange={(e) => setOverallDiscount(parseFloat(e.target.value) || 0)}
-              className="input"
-            />
+            <input type="number" min="0" step="0.01" value={overallDiscount} onChange={(e) => setOverallDiscount(parseFloat(e.target.value) || 0)} className="input" />
           </div>
         </div>
 
         <div className="pos-totals mt-4">
-          <p>Subtotal: KES {subtotal.toFixed(2)}</p>
-          <p>Discount: -KES {computedDiscount.toFixed(2)}</p>
+          <p>Subtotal (before discounts): KES {subtotal.toFixed(2)}</p>
+          <p>Overall Discount: -KES {computedDiscount.toFixed(2)}</p>
           <p className="pos-grand-total">TOTAL (Buy): KES {totalBuy.toFixed(2)}</p>
           <p>Expected Revenue: KES {expectedRevenue.toFixed(2)}</p>
           <p>Expected Profit: KES {expectedProfit.toFixed(2)}</p>
@@ -489,13 +421,7 @@ export default function AdminPurchases() {
       <div className="dashboard-section">
         <h2>Purchase Orders History</h2>
         <div className="filters">
-          <input
-            type="text"
-            placeholder="Search..."
-            value={historySearch}
-            onChange={(e) => setHistorySearch(e.target.value)}
-            className="input"
-          />
+          <input type="text" placeholder="Search by supplier, PO number, or date..." value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} className="input" />
           <select value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)} className="input">
             <option value="">All Status</option>
             <option value="pending">Pending</option>
@@ -507,41 +433,52 @@ export default function AdminPurchases() {
 
         {loadingHistory ? <p>Loading...</p> : (
           <div className="mt-4">
-            {groupedBySupplier.map((group) => (
-              <div key={group.supplier.id} className="card mb-2">
-                <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}>
-                  <div>
-                    <strong>{group.supplier.name}</strong>
-                    <p className="text-muted">{group.orders.length} orders | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}</p>
+            {groupedBySupplier.map((group) => {
+              const pendingCount = group.orders.filter((o) => o.status === 'pending').length;
+              const receivedCount = group.orders.filter((o) => o.status === 'received').length;
+              return (
+                <div key={group.supplier.id} className="card mb-2">
+                  <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}>
+                    <div>
+                      <strong>{group.supplier.name}</strong>
+                      <p className="text-muted">
+                        {group.orders.length} orders | {group.orders.reduce((sum, o) => sum + 1, 0)} items | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}
+                      </p>
+                      <span className="text-muted">{pendingCount} pending {receivedCount} received</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
+                      <i className={`fas fa-chevron-${expandedSupplier === group.supplier.id ? 'up' : 'down'}`}></i>
+                    </div>
                   </div>
-                  <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
+                  {expandedSupplier === group.supplier.id && (
+                    <table className="table mt-2">
+                      <thead>
+                        <tr><th>PO Number</th><th>Items</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+                      </thead>
+                      <tbody>
+                        {group.orders.map((order) => (
+                          <tr key={order.id}>
+                            <td><strong>{order.po_number || order.id.slice(0, 8)}</strong></td>
+                            <td>1 items</td>
+                            <td>KES {order.total}</td>
+                            <td><span className={`status ${order.status}`}>{order.status}</span></td>
+                            <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
+                            <td>
+                              {order.status === 'pending' && (
+                                <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}>
+                                  <i className="fas fa-check"></i> Receive
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
-                {expandedSupplier === group.supplier.id && (
-                  <table className="table mt-2">
-                    <thead>
-                      <tr><th>Date</th><th>Requested By</th><th>Status</th><th>Total</th><th>Actions</th></tr>
-                    </thead>
-                    <tbody>
-                      {group.orders.map((order) => (
-                        <tr key={order.id}>
-                          <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
-                          <td>{order.requested_by?.full_name || 'N/A'}</td>
-                          <td>{order.status}</td>
-                          <td>KES {order.total}</td>
-                          <td>
-                            {order.status === 'pending' && (
-                              <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}>
-                                <i className="fas fa-check"></i> Receive
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -551,28 +488,56 @@ export default function AdminPurchases() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h3 className="modal-title"><i className="fas fa-cart-plus"></i> Add to Purchase</h3>
+              <h3 className="modal-title"><i className="fas fa-cart-plus"></i> Add to Purchase Order</h3>
               <button className="modal-close" onClick={() => setShowProductModal(false)}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
               <p><strong>{modalProduct.name}</strong></p>
-              <div className="form-group">
-                <label>Quantity</label>
-                <input type="number" min="1" value={modalQty} onChange={(e) => setModalQty(parseInt(e.target.value) || 1)} className="input" />
+              {modalProduct.sku && <p className="text-muted">{modalProduct.sku}</p>}
+              <p>Current Stock: {modalProduct.total_stock ?? 0} {modalProduct.unit}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="form-group">
+                  <label>Buy Price (per {modalProduct.unit})</label>
+                  <input type="number" min="0" step="0.01" value={modalBuyPrice} onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} className="input" />
+                </div>
+                <div className="form-group">
+                  <label>Sell Price</label>
+                  <p>KES {modalProduct.selling_price}/{modalProduct.unit}</p>
+                </div>
               </div>
-              <div className="form-group">
-                <label>Buy Price</label>
-                <input type="number" min="0" step="0.01" value={modalBuyPrice} onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} className="input" />
-              </div>
-              <div className="form-group">
-                <label>Discount (KES)</label>
-                <input type="number" min="0" step="0.01" value={modalDiscount} onChange={(e) => setModalDiscount(parseFloat(e.target.value) || 0)} className="input" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="form-group">
+                  <label>Quantity</label>
+                  <input type="number" min="1" value={modalQty} onChange={(e) => setModalQty(parseInt(e.target.value) || 1)} className="input" />
+                </div>
+                <div className="form-group">
+                  <label>Discount (KES)</label>
+                  <input type="number" min="0" step="0.01" value={modalDiscount} onChange={(e) => setModalDiscount(parseFloat(e.target.value) || 0)} className="input" />
+                </div>
               </div>
               <p className="pos-grand-total">Total: KES {(modalQty * modalBuyPrice - modalDiscount).toFixed(2)}</p>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowProductModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmAddProduct}>Add</button>
+              <button className="btn btn-primary" onClick={confirmAddProduct}>Add to Order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {successMessage && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-check-circle"></i> Success</h3>
+              <button className="modal-close" onClick={() => setSuccessMessage('')}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body text-center">
+              <p>{successMessage}</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setSuccessMessage('')}>OK</button>
             </div>
           </div>
         </div>
@@ -587,18 +552,9 @@ export default function AdminPurchases() {
               <button className="modal-close" onClick={closeSupplierModal}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
-              <div className="form-group">
-                <label>Supplier Name *</label>
-                <input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} className="input" />
-              </div>
-              <div className="form-group">
-                <label>Phone</label>
-                <input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} className="input" />
-              </div>
-              <div className="form-group">
-                <label>Address</label>
-                <input type="text" value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} className="input" />
-              </div>
+              <div className="form-group"><label>Supplier Name *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} className="input" /></div>
+              <div className="form-group"><label>Phone</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} className="input" /></div>
+              <div className="form-group"><label>Address</label><input type="text" value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} className="input" /></div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={closeSupplierModal}>Cancel</button>
