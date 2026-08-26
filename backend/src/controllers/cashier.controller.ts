@@ -33,7 +33,7 @@ export const createCashier = async (req: Request, res: Response) => {
     throw new AppError('Cashier name is required', 400);
   }
 
-  // Check if name already exists
+  // Check if name already exists (case-insensitive)
   const { data: existing } = await supabaseAdmin
     .from('cashiers')
     .select('id')
@@ -52,7 +52,7 @@ export const createCashier = async (req: Request, res: Response) => {
   res.status(201).json(data);
 };
 
-// Update cashier name
+// Update cashier name or status
 export const updateCashier = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { fullName, status } = req.body;
