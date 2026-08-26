@@ -24,7 +24,14 @@ export default function CashierDashboard() {
     }
 
     const date = new Date();
-    setToday(date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+    setToday(
+      date.toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    );
     fetchDashboard();
   }, [user]);
 
@@ -41,15 +48,15 @@ export default function CashierDashboard() {
 
   if (loading) return <Layout><div>Loading...</div></Layout>;
 
-  const myTodaySales = dashboard?.my_today_sales || 0;
-  const myTodayCount = dashboard?.my_today_count || 0;
-  const myTotalSales = dashboard?.my_total_sales || 0;
-  const myTotalCount = dashboard?.my_total_count || 0;
-  const availableProducts = dashboard?.available_products || 0;
-  const totalUnits = dashboard?.total_units || 0;
-  const outstandingDebt = dashboard?.outstanding_debt || 0;
-  const outstandingCustomersCount = dashboard?.outstanding_customers_count || 0;
-  const creditCustomers = dashboard?.credit_customers || [];
+  const todaySales = dashboard?.today_sales ?? dashboard?.my_today_sales ?? 0;
+  const todayCount = dashboard?.today_count ?? dashboard?.my_today_count ?? 0;
+  const totalSales = dashboard?.total_sales ?? dashboard?.my_total_sales ?? 0;
+  const totalCount = dashboard?.total_count ?? dashboard?.my_total_count ?? 0;
+  const availableProducts = dashboard?.available_products ?? 0;
+  const totalUnits = dashboard?.total_units ?? 0;
+  const outstandingDebt = dashboard?.outstanding_debt ?? 0;
+  const outstandingCustomersCount = dashboard?.outstanding_customers_count ?? 0;
+  const creditCustomers = dashboard?.credit_customers ?? [];
 
   return (
     <Layout>
@@ -68,34 +75,34 @@ export default function CashierDashboard() {
       </button>
 
       <div className="grid grid-cols-4 gap-4">
-        <Card 
-          title="My Today Sales" 
-          value={`KES ${myTodaySales.toLocaleString()}`} 
-          subtitle={`${myTodayCount} transactions`}
-          icon="fa-money-bill-trend-up" 
+        <Card
+          title="Today Sales"
+          value={`KES ${todaySales.toLocaleString()}`}
+          subtitle={`${todayCount} transactions`}
+          icon="fa-money-bill-trend-up"
           color="#F57C00"
           onClick={() => router.push('/cashier/sales')}
         />
-        <Card 
-          title="My Total Sales" 
-          value={`KES ${myTotalSales.toLocaleString()}`} 
-          subtitle={`${myTotalCount} transactions`}
-          icon="fa-chart-line" 
-          color="#1B5E20"
+        <Card
+          title="Total Sales"
+          value={`KES ${totalSales.toLocaleString()}`}
+          subtitle={`${totalCount} transactions`}
+          icon="fa-chart-line"
+          color="#0F766E"
           onClick={() => router.push('/cashier/sales')}
         />
-        <Card 
-          title="Available Products" 
-          value={availableProducts.toString()} 
+        <Card
+          title="Available Products"
+          value={availableProducts.toString()}
           subtitle={`${totalUnits} units in stock`}
-          icon="fa-boxes-stacked" 
+          icon="fa-boxes-stacked"
           color="#4CAF50"
         />
-        <Card 
-          title="Outstanding Debt" 
-          value={`KES ${outstandingDebt.toLocaleString()}`} 
+        <Card
+          title="Outstanding Debt"
+          value={`KES ${outstandingDebt.toLocaleString()}`}
           subtitle={`${outstandingCustomersCount} customers with debt`}
-          icon="fa-file-invoice-dollar" 
+          icon="fa-file-invoice-dollar"
           color="#D32F2F"
           onClick={() => router.push('/cashier/credit')}
         />
@@ -134,11 +141,15 @@ export default function CashierDashboard() {
           </button>
           <button className="btn btn-outline" onClick={() => router.push('/cashier/sales')}>
             <i className="fas fa-receipt" style={{ marginRight: '6px' }}></i>
-            My Sales
+            Sales
           </button>
           <button className="btn btn-outline" onClick={() => router.push('/cashier/returns')}>
             <i className="fas fa-rotate-left" style={{ marginRight: '6px' }}></i>
             Returns
+          </button>
+          <button className="btn btn-outline" onClick={() => router.push('/admin/purchases')}>
+            <i className="fas fa-cart-plus" style={{ marginRight: '6px' }}></i>
+            Purchases
           </button>
         </div>
       </div>
