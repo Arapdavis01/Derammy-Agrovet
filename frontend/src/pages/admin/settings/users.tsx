@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
 
-interface User {
+interface StaffUser {
   id: string;
   full_name: string;
   username: string;
@@ -15,19 +15,38 @@ interface User {
   created_at: string;
 }
 
+interface Cashier {
+  id: string;
+  full_name: string;
+  status: string;
+  created_at: string;
+}
+
 export default function AdminUsers() {
   const { user } = useAuth();
   const router = useRouter();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({
+  const [activeTab, setActiveTab] = useState<'staff' | 'cashiers'>('staff');
+
+  // Staff states
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [showStaffForm, setShowStaffForm] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<StaffUser | null>(null);
+  const [staffForm, setStaffForm] = useState({
     fullName: '',
-    role: 'cashier',
+    username: '',
+    password: '',
+    role: 'manager',
   });
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
+
+  // Cashier states
+  const [cashiers, setCashiers] = useState<Cashier[]>([]);
+  const [loadingCashiers, setLoadingCashiers] = useState(false);
+  const [showCashierForm, setShowCashierForm] = useState(false);
+  const [editingCashier, setEditingCashier] = useState<Cashier | null>(null);
+  const [cashierForm, setCashierForm] = useState({ fullName: '' });
 
   useEffect(() => {
     if (!user) {
@@ -38,83 +57,91 @@ export default function AdminUsers() {
       router.push('/admin/dashboard');
       return;
     }
-    fetchUsers();
-  }, [user]);
+    if (activeTab === 'staff') {
+      fetchStaffUsers();
+    } else {
+      fetchCashiers();
+    }
+  }, [user, activeTab]);
 
-  const fetchUsers = async () => {
-    setLoading(true);
+  // ========== STAFF FUNCTIONS ==========
+  const fetchStaffUsers = async () => {
+    setLoadingStaff(true);
     try {
       const res = await api.get('/users');
-      setUsers(res.data);
+      setStaffUsers(res.data || []);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to fetch users');
+      toast.error('Failed to fetch staff users');
     } finally {
-      setLoading(false);
+      setLoadingStaff(false);
     }
   };
 
-  const handleOpenAddForm = () => {
-    setEditingUser(null);
-    setFormData({ fullName: '', role: 'cashier' });
-    setShowForm(true);
+  const handleOpenStaffForm = (staff?: StaffUser) => {
+    if (staff) {
+      setEditingStaff(staff);
+      setStaffForm({
+        fullName: staff.full_name,
+        username: staff.username,
+        password: '',
+        role: staff.role,
+      });
+    } else {
+      setEditingStaff(null);
+      setStaffForm({ fullName: '', username: '', password: '', role: 'manager' });
+    }
+    setShowStaffForm(true);
   };
 
-  const handleOpenEditForm = (user: User) => {
-    setEditingUser(user);
-    setFormData({
-      fullName: user.full_name,
-      role: user.role,
-    });
-    setShowForm(true);
+  const handleStaffFormChange = (field: string, value: string) => {
+    setStaffForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleFormChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const submitForm = async () => {
-    if (!formData.fullName.trim()) {
-      toast.error('Cashier name is required');
+  const submitStaffForm = async () => {
+    if (!staffForm.fullName.trim() || !staffForm.username.trim()) {
+      toast.error('Full name and username are required');
       return;
     }
-
+    if (!editingStaff && !staffForm.password) {
+      toast.error('Password is required for new staff');
+      return;
+    }
     try {
-      if (editingUser) {
-        // For editing, update name and role
-        await api.put(`/users/${editingUser.id}`, {
-          fullName: formData.fullName,
-          role: formData.role,
+      if (editingStaff) {
+        await api.put(`/users/${editingStaff.id}`, {
+          fullName: staffForm.fullName,
+          username: staffForm.username,
+          role: staffForm.role,
         });
-        toast.success('User updated');
+        toast.success('Staff updated');
       } else {
-        // For adding cashier, no username/password needed
         await api.post('/users', {
-          fullName: formData.fullName,
-          username: `cashier_${Date.now()}`, // unique temporary username
-          password: 'cashier123', // default password (unused for shared cashier)
-          role: 'cashier',
+          fullName: staffForm.fullName,
+          username: staffForm.username,
+          password: staffForm.password,
+          role: staffForm.role,
         });
-        toast.success('Cashier added');
+        toast.success('Staff created');
       }
-      setShowForm(false);
-      fetchUsers();
+      setShowStaffForm(false);
+      fetchStaffUsers();
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to save user');
+      toast.error(error.response?.data?.error || 'Failed to save staff');
     }
   };
 
-  const handleDeactivate = async (id: string, currentStatus: string) => {
-    if (!confirm(`Are you sure you want to ${currentStatus === 'active' ? 'deactivate' : 'activate'} this user?`)) return;
+  const handleDeactivateStaff = async (id: string, currentStatus: string) => {
+    if (!confirm(`Are you sure you want to ${currentStatus === 'active' ? 'deactivate' : 'activate'} this staff?`)) return;
     try {
       if (currentStatus === 'active') {
         await api.put(`/users/${id}/deactivate`);
       } else {
         await api.put(`/users/${id}`, { status: 'active' });
       }
-      toast.success('User status updated');
-      fetchUsers();
+      toast.success('Staff status updated');
+      fetchStaffUsers();
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to update user status');
+      toast.error('Failed to update staff status');
     }
   };
 
@@ -134,7 +161,66 @@ export default function AdminUsers() {
       setResetPasswordUserId(null);
       setNewPassword('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to reset password');
+      toast.error('Failed to reset password');
+    }
+  };
+
+  // ========== CASHIER FUNCTIONS ==========
+  const fetchCashiers = async () => {
+    setLoadingCashiers(true);
+    try {
+      const res = await api.get('/cashiers');
+      setCashiers(res.data || []);
+    } catch (error: any) {
+      toast.error('Failed to fetch cashiers');
+    } finally {
+      setLoadingCashiers(false);
+    }
+  };
+
+  const handleOpenCashierForm = (cashier?: Cashier) => {
+    if (cashier) {
+      setEditingCashier(cashier);
+      setCashierForm({ fullName: cashier.full_name });
+    } else {
+      setEditingCashier(null);
+      setCashierForm({ fullName: '' });
+    }
+    setShowCashierForm(true);
+  };
+
+  const submitCashierForm = async () => {
+    if (!cashierForm.fullName.trim()) {
+      toast.error('Cashier name is required');
+      return;
+    }
+    try {
+      if (editingCashier) {
+        await api.put(`/cashiers/${editingCashier.id}`, { fullName: cashierForm.fullName });
+        toast.success('Cashier updated');
+      } else {
+        await api.post('/cashiers', { fullName: cashierForm.fullName });
+        toast.success('Cashier added');
+      }
+      setShowCashierForm(false);
+      fetchCashiers();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to save cashier');
+    }
+  };
+
+  const handleDeactivateCashier = async (id: string, currentStatus: string) => {
+    if (!confirm(`Are you sure you want to ${currentStatus === 'active' ? 'deactivate' : 'activate'} this cashier?`)) return;
+    try {
+      if (currentStatus === 'active') {
+        await api.put(`/cashiers/${id}/deactivate`);
+      } else {
+        await api.put(`/cashiers/${id}/activate`);
+      }
+      toast.success('Cashier status updated');
+      fetchCashiers();
+    } catch (error: any) {
+      toast.error('Failed to update cashier status');
     }
   };
 
@@ -142,119 +228,164 @@ export default function AdminUsers() {
     <Layout>
       <div className="flex justify-between items-center mb-4">
         <h1>Manage Users</h1>
-        <button className="btn btn-primary" onClick={handleOpenAddForm}>
-          <i className="fas fa-user-plus" style={{ marginRight: '6px' }}></i> Add Cashier
+        <button
+          className="btn btn-primary"
+          onClick={() => (activeTab === 'staff' ? handleOpenStaffForm() : handleOpenCashierForm())}
+        >
+          <i className="fas fa-plus"></i>
+          {activeTab === 'staff' ? ' Add Staff' : ' Add Cashier'}
         </button>
       </div>
 
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.full_name}</td>
-                <td>{u.role}</td>
-                <td>
-                  <span className={`status ${u.status === 'active' ? 'active' : 'inactive'}`}>
-                    {u.status}
-                  </span>
-                </td>
-                <td>
-                  <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditForm(u)}>
-                    <i className="fas fa-edit"></i> Edit
-                  </button>
-                  {u.status === 'active' ? (
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(u.id, u.status)}>Deactivate</button>
-                  ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => handleDeactivate(u.id, u.status)}>Activate</button>
-                  )}
-                </td>
+      {/* Tabs */}
+      <div className="tabs">
+        <button className={`tab ${activeTab === 'staff' ? 'active' : ''}`} onClick={() => setActiveTab('staff')}>
+          <i className="fas fa-user-shield"></i> Staff Accounts
+        </button>
+        <button className={`tab ${activeTab === 'cashiers' ? 'active' : ''}`} onClick={() => setActiveTab('cashiers')}>
+          <i className="fas fa-user"></i> Cashiers
+        </button>
+      </div>
+
+      {/* Staff Table */}
+      {activeTab === 'staff' && (
+        loadingStaff ? <p>Loading...</p> : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
-            ))}
-            {users.length === 0 && (
-              <tr><td colSpan={4} className="text-center">No users found</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {staffUsers.map((staff) => (
+                <tr key={staff.id}>
+                  <td>{staff.full_name}</td>
+                  <td>{staff.username}</td>
+                  <td>{staff.role}</td>
+                  <td><span className={`status ${staff.status}`}>{staff.status}</span></td>
+                  <td>
+                    <button className="btn btn-sm btn-outline" onClick={() => handleOpenStaffForm(staff)}>Edit</button>
+                    <button className="btn btn-sm btn-outline" onClick={() => handleResetPassword(staff.id)}>Reset Password</button>
+                    {staff.status === 'active' ? (
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeactivateStaff(staff.id, staff.status)}>Deactivate</button>
+                    ) : (
+                      <button className="btn btn-sm btn-primary" onClick={() => handleDeactivateStaff(staff.id, staff.status)}>Activate</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
       )}
 
-      {/* Add/Edit User Modal */}
-      {showForm && (
+      {/* Cashiers Table */}
+      {activeTab === 'cashiers' && (
+        loadingCashiers ? <p>Loading...</p> : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cashiers.map((cashier) => (
+                <tr key={cashier.id}>
+                  <td>{cashier.full_name}</td>
+                  <td><span className={`status ${cashier.status}`}>{cashier.status}</span></td>
+                  <td>
+                    <button className="btn btn-sm btn-outline" onClick={() => handleOpenCashierForm(cashier)}>Edit</button>
+                    {cashier.status === 'active' ? (
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeactivateCashier(cashier.id, cashier.status)}>Deactivate</button>
+                    ) : (
+                      <button className="btn btn-sm btn-primary" onClick={() => handleDeactivateCashier(cashier.id, cashier.status)}>Activate</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+
+      {/* Staff Form Modal */}
+      {showStaffForm && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h3 className="modal-title">
-                <i className="fas fa-user-plus"></i> {editingUser ? 'Edit User' : 'Add Cashier'}
-              </h3>
-              <button className="modal-close" onClick={() => setShowForm(false)}>
-                <i className="fas fa-times"></i>
-              </button>
+              <h3 className="modal-title"><i className="fas fa-user-shield"></i> {editingStaff ? 'Edit Staff' : 'Add Staff'}</h3>
+              <button className="modal-close" onClick={() => setShowStaffForm(false)}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label><i className="fas fa-user"></i> Full Name *</label>
-                <input
-                  type="text"
-                  value={formData.fullName}
-                  onChange={(e) => handleFormChange('fullName', e.target.value)}
-                  className="input"
-                  placeholder="e.g., Antony Kimutai"
-                  autoFocus
-                />
+                <label>Full Name *</label>
+                <input type="text" value={staffForm.fullName} onChange={(e) => handleStaffFormChange('fullName', e.target.value)} className="input" />
               </div>
-              {editingUser && (
+              <div className="form-group">
+                <label>Username *</label>
+                <input type="text" value={staffForm.username} onChange={(e) => handleStaffFormChange('username', e.target.value)} className="input" />
+              </div>
+              {!editingStaff && (
                 <div className="form-group">
-                  <label><i className="fas fa-user-tag"></i> Role</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => handleFormChange('role', e.target.value)}
-                    className="input"
-                  >
-                    <option value="cashier">Cashier</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                  <label>Password *</label>
+                  <input type="password" value={staffForm.password} onChange={(e) => handleStaffFormChange('password', e.target.value)} className="input" />
                 </div>
               )}
+              <div className="form-group">
+                <label>Role</label>
+                <select value={staffForm.role} onChange={(e) => handleStaffFormChange('role', e.target.value)} className="input">
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitForm}>
-                <i className="fas fa-save"></i> Save
-              </button>
+              <button className="btn btn-outline" onClick={() => setShowStaffForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitStaffForm}><i className="fas fa-save"></i> Save</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Reset Password Modal – only for admin/manager accounts if needed */}
+      {/* Cashier Form Modal */}
+      {showCashierForm && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-user"></i> {editingCashier ? 'Edit Cashier' : 'Add Cashier'}</h3>
+              <button className="modal-close" onClick={() => setShowCashierForm(false)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Cashier Name *</label>
+                <input type="text" value={cashierForm.fullName} onChange={(e) => setCashierForm({ fullName: e.target.value })} className="input" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowCashierForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitCashierForm}><i className="fas fa-save"></i> Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
       {resetPasswordUserId && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h3 className="modal-title"><i className="fas fa-key"></i> Reset Password</h3>
-              <button className="modal-close" onClick={() => setResetPasswordUserId(null)}>
-                <i className="fas fa-times"></i>
-              </button>
+              <button className="modal-close" onClick={() => setResetPasswordUserId(null)}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
               <label>New Password</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="input"
-              />
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="input" />
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setResetPasswordUserId(null)}>Cancel</button>
