@@ -29,6 +29,7 @@ export const createSale = async (req: Request, res: Response) => {
     discount = 0,
     tax = 0,
     sale_status = 'completed',
+    cashier_id, // NEW: selected cashier from POS
   } = req.body as any;
 
   const userId = (req as any).user.id;
@@ -125,14 +126,15 @@ export const createSale = async (req: Request, res: Response) => {
   // Generate invoice number
   const invoice_no = await generateInvoiceNo();
 
-  // Insert sale record
+  // Insert sale record (include cashier_id)
   const { data: sale, error: saleError } = await supabaseAdmin
     .from('sales')
     .insert({
       invoice_no,
       customer_id: customer_id || null,
-      customer_name: customer_name || null,   // for walk-in customer name
+      customer_name: customer_name || null,
       user_id: userId,
+      cashier_id: cashier_id || null, // store selected cashier
       subtotal: subtotalExclVAT,
       discount,
       tax: vatAmount,
@@ -214,12 +216,13 @@ export const createSale = async (req: Request, res: Response) => {
     }
   }
 
-  // Fetch complete sale with items
+  // Fetch complete sale with items and cashier info
   const { data: fullSale, error: fetchError } = await supabaseAdmin
     .from('sales')
     .select(`
       *,
       customer:customers(id, name),
+      cashier:users!sales_cashier_id_fkey(id, full_name),
       sale_items(
         id, product_id, batch_id, quantity, unit_price, discount, total,
         product:products(id, name, unit)
@@ -241,6 +244,7 @@ export const listSales = async (req: Request, res: Response) => {
     end_date,
     user_id,
     customer_id,
+    cashier_id,
     payment_method,
     sale_status,
     page = '1',
@@ -254,9 +258,10 @@ export const listSales = async (req: Request, res: Response) => {
   let query = supabaseAdmin
     .from('sales')
     .select(`
-      id, invoice_no, customer_id, customer_name, user_id, sale_date, subtotal, discount, tax, total, amount_paid, payment_status, sale_status, payment_method,
+      id, invoice_no, customer_id, customer_name, user_id, cashier_id, sale_date, subtotal, discount, tax, total, amount_paid, payment_status, sale_status, payment_method,
       customer:customers(id, name),
-      user:users(id, full_name)
+      user:users(id, full_name),
+      cashier:users!sales_cashier_id_fkey(id, full_name)
     `, { count: 'exact' })
     .order('sale_date', { ascending: false })
     .range(offset, offset + limitNum - 1);
@@ -265,6 +270,7 @@ export const listSales = async (req: Request, res: Response) => {
   if (end_date) query = query.lte('sale_date', end_date);
   if (user_id) query = query.eq('user_id', user_id);
   if (customer_id) query = query.eq('customer_id', customer_id);
+  if (cashier_id) query = query.eq('cashier_id', cashier_id);
   if (payment_method) query = query.eq('payment_method', payment_method);
   if (sale_status) query = query.eq('sale_status', sale_status);
 
@@ -289,6 +295,7 @@ export const getSale = async (req: Request, res: Response) => {
       *,
       customer:customers(id, name),
       user:users(id, full_name),
+      cashier:users!sales_cashier_id_fkey(id, full_name),
       sale_items(
         id, product_id, batch_id, quantity, unit_price, discount, total,
         product:products(id, name, unit),
