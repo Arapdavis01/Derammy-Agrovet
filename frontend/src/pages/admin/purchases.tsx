@@ -111,7 +111,7 @@ export default function AdminPurchases() {
 
   const fetchCashiers = async () => {
     try {
-      const res = await api.get('/users/cashiers');
+      const res = await api.get('/cashiers/active');
       setCashiers(res.data || []);
     } catch (error) {}
   };
