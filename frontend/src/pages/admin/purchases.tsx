@@ -21,6 +21,11 @@ interface Product {
   track_batch_expiry: boolean;
 }
 
+interface Cashier {
+  id: string;
+  full_name: string;
+}
+
 interface PurchaseItem {
   product: Product;
   quantity: number;
@@ -36,6 +41,8 @@ interface Purchase {
   total: number;
   status: string;
   supplier: { id: string; name: string } | null;
+  requested_by?: { full_name: string } | null;
+  received_by?: { full_name: string } | null;
 }
 
 export default function AdminPurchases() {
@@ -50,7 +57,19 @@ export default function AdminPurchases() {
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
   const [overallDiscount, setOverallDiscount] = useState(0);
+  const [discountType, setDiscountType] = useState<'kes' | 'pct'>('kes');
   const [creating, setCreating] = useState(false);
+
+  // Cashier selection for request/receive tracking
+  const [cashiers, setCashiers] = useState<Cashier[]>([]);
+  const [requestedBy, setRequestedBy] = useState('');
+
+  // Add product modal
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [modalProduct, setModalProduct] = useState<Product | null>(null);
+  const [modalQty, setModalQty] = useState(1);
+  const [modalBuyPrice, setModalBuyPrice] = useState(0);
+  const [modalDiscount, setModalDiscount] = useState(0);
 
   // Supplier modal states
   const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -68,15 +87,12 @@ export default function AdminPurchases() {
       router.push('/login');
       return;
     }
-    if (user.role === 'cashier') {
-      router.push('/cashier/dashboard');
-      return;
-    }
+    // Allow both admin/manager and cashier
     fetchInitialData();
   }, [user]);
 
   const fetchInitialData = async () => {
-    await Promise.all([fetchSuppliers(), fetchHistory()]);
+    await Promise.all([fetchSuppliers(), fetchHistory(), fetchCashiers()]);
   };
 
   const fetchSuppliers = async () => {
@@ -85,6 +101,15 @@ export default function AdminPurchases() {
       setSuppliers(res.data);
     } catch (error) {
       toast.error('Failed to fetch suppliers');
+    }
+  };
+
+  const fetchCashiers = async () => {
+    try {
+      const res = await api.get('/users/cashiers');
+      setCashiers(res.data || []);
+    } catch (error) {
+      // silent
     }
   };
 
@@ -114,17 +139,31 @@ export default function AdminPurchases() {
     }
   };
 
-  const addPurchaseItem = (product: Product) => {
-    if (purchaseItems.some((item) => item.product.id === product.id)) {
-      toast.error('Product already added');
+  const openAddProductModal = (product: Product) => {
+    setModalProduct(product);
+    setModalQty(1);
+    setModalBuyPrice(product.cost_price);
+    setModalDiscount(0);
+    setShowProductModal(true);
+    setSearchResults([]);
+    setProductSearch('');
+  };
+
+  const confirmAddProduct = () => {
+    if (!modalProduct) return;
+    if (modalQty <= 0) {
+      toast.error('Quantity must be positive');
       return;
     }
     setPurchaseItems([
       ...purchaseItems,
-      { product, quantity: 1, cost_price: product.cost_price },
+      {
+        product: modalProduct,
+        quantity: modalQty,
+        cost_price: modalBuyPrice,
+      },
     ]);
-    setProductSearch('');
-    setSearchResults([]);
+    setShowProductModal(false);
   };
 
   const updateItem = (productId: string, field: string, value: any) => {
@@ -141,7 +180,9 @@ export default function AdminPurchases() {
 
   // Calculations
   const subtotal = purchaseItems.reduce((sum, item) => sum + item.quantity * item.cost_price, 0);
-  const totalBuy = subtotal - overallDiscount;
+  const computedDiscount =
+    discountType === 'pct' ? subtotal * (overallDiscount / 100) : overallDiscount;
+  const totalBuy = subtotal - computedDiscount;
   const expectedRevenue = purchaseItems.reduce(
     (sum, item) => sum + item.quantity * item.product.selling_price,
     0
@@ -157,6 +198,10 @@ export default function AdminPurchases() {
       toast.error('Add at least one product');
       return;
     }
+    if (!requestedBy) {
+      toast.error('Select who is requesting this purchase');
+      return;
+    }
     setCreating(true);
     try {
       const items = purchaseItems.map((item) => ({
@@ -170,19 +215,34 @@ export default function AdminPurchases() {
       await api.post('/purchases', {
         supplier_id: selectedSupplier,
         items,
-        status: 'received',
+        status: 'pending', // changed to pending
+        requested_by: requestedBy,
+        total: totalBuy,
       });
 
-      toast.success('Purchase order submitted');
+      toast.success('Purchase order submitted (pending)');
       setPurchaseItems([]);
       setSelectedSupplier('');
       setNotes('');
       setOverallDiscount(0);
+      setRequestedBy('');
       fetchHistory();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to submit purchase order');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const receivePurchase = async (purchaseId: string) => {
+    const { user } = useAuth();
+    const receivedBy = user?.id; // current logged-in user receives
+    try {
+      await api.put(`/purchases/${purchaseId}/receive`, { received_by: receivedBy });
+      toast.success('Stock received successfully');
+      fetchHistory();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to receive purchase');
     }
   };
 
@@ -269,10 +329,25 @@ export default function AdminPurchases() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 mt-2">
-          <button className="btn btn-outline btn-sm" onClick={openSupplierModal}>
-            <i className="fas fa-plus" style={{ marginRight: '4px' }}></i> New Supplier
-          </button>
+        <div className="grid grid-cols-2 gap-4 mt-2">
+          <div>
+            <label>Requested By *</label>
+            <select
+              value={requestedBy}
+              onChange={(e) => setRequestedBy(e.target.value)}
+              className="input"
+            >
+              <option value="">Select cashier...</option>
+              {cashiers.map((c) => (
+                <option key={c.id} value={c.id}>{c.full_name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <button className="btn btn-outline btn-sm" onClick={openSupplierModal}>
+              <i className="fas fa-plus" style={{ marginRight: '4px' }}></i> New Supplier
+            </button>
+          </div>
         </div>
 
         <div className="mt-4">
@@ -288,7 +363,7 @@ export default function AdminPurchases() {
           {searchResults.length > 0 && (
             <div className="pos-search-results">
               {searchResults.map((product) => (
-                <div key={product.id} className="pos-search-item" onClick={() => addPurchaseItem(product)}>
+                <div key={product.id} className="pos-search-item" onClick={() => openAddProductModal(product)}>
                   <div className="pos-product-info">
                     <span className="pos-product-name">{product.name}</span>
                     <span className="pos-product-stock">
@@ -378,7 +453,14 @@ export default function AdminPurchases() {
 
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
-            <label>Overall Discount (KES)</label>
+            <label>Discount Type</label>
+            <select value={discountType} onChange={(e) => setDiscountType(e.target.value as any)} className="input">
+              <option value="kes">KES</option>
+              <option value="pct">%</option>
+            </select>
+          </div>
+          <div>
+            <label>Overall Discount</label>
             <input
               type="number"
               min="0"
@@ -391,179 +473,136 @@ export default function AdminPurchases() {
         </div>
 
         <div className="pos-totals mt-4">
-          <p>Subtotal (before discounts): KES {subtotal.toFixed(2)}</p>
-          <p>Overall Discount: -KES {overallDiscount.toFixed(2)}</p>
+          <p>Subtotal: KES {subtotal.toFixed(2)}</p>
+          <p>Discount: -KES {computedDiscount.toFixed(2)}</p>
           <p className="pos-grand-total">TOTAL (Buy): KES {totalBuy.toFixed(2)}</p>
           <p>Expected Revenue: KES {expectedRevenue.toFixed(2)}</p>
           <p>Expected Profit: KES {expectedProfit.toFixed(2)}</p>
         </div>
 
         <button className="btn btn-primary mt-4" onClick={submitPurchaseOrder} disabled={creating}>
-          {creating ? (
-            <>
-              <i className="fas fa-spinner fa-spin" style={{ marginRight: '6px' }}></i> Submitting...
-            </>
-          ) : (
-            <>
-              <i className="fas fa-check-circle" style={{ marginRight: '6px' }}></i> Submit Purchase Order
-            </>
-          )}
+          {creating ? 'Submitting...' : 'Submit Purchase Order'}
         </button>
       </div>
 
-      {/* Purchase Orders History */}
+      {/* History */}
       <div className="dashboard-section">
-        <h2><i className="fas fa-history" style={{ marginRight: '8px' }}></i>Purchase Orders History</h2>
-
+        <h2>Purchase Orders History</h2>
         <div className="filters">
           <input
             type="text"
-            placeholder="Search by supplier, PO number, or date..."
+            placeholder="Search..."
             value={historySearch}
             onChange={(e) => setHistorySearch(e.target.value)}
             className="input"
           />
-          <select
-            value={historyStatus}
-            onChange={(e) => setHistoryStatus(e.target.value)}
-            className="input"
-          >
+          <select value={historyStatus} onChange={(e) => setHistoryStatus(e.target.value)} className="input">
             <option value="">All Status</option>
-            <option value="received">Received</option>
             <option value="pending">Pending</option>
-            <option value="cancelled">Cancelled</option>
+            <option value="received">Received</option>
           </select>
-          <button className="btn btn-outline" onClick={fetchHistory}>
-            <i className="fas fa-refresh" style={{ marginRight: '4px' }}></i> Refresh
-          </button>
         </div>
 
-        <p className="mt-2">
-          Total: KES {totalHistory.toFixed(2)} | Suppliers: {groupedBySupplier.length} | POs: {filteredPurchases.length}
-        </p>
+        <p className="mt-2">Total: KES {totalHistory.toFixed(2)} | Suppliers: {groupedBySupplier.length} | POs: {filteredPurchases.length}</p>
 
-        {loadingHistory ? (
-          <p>Loading history...</p>
-        ) : (
+        {loadingHistory ? <p>Loading...</p> : (
           <div className="mt-4">
             {groupedBySupplier.map((group) => (
               <div key={group.supplier.id} className="card mb-2">
-                <div
-                  className="flex justify-between items-center cursor-pointer"
-                  onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}
-                >
+                <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}>
                   <div>
                     <strong>{group.supplier.name}</strong>
-                    <p className="text-muted">
-                      {group.orders.length} orders | {group.orders.reduce((sum, o) => sum + 1, 0)} items | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}
-                    </p>
+                    <p className="text-muted">{group.orders.length} orders | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
-                    <i className={`fas fa-chevron-${expandedSupplier === group.supplier.id ? 'up' : 'down'}`}></i>
-                  </div>
+                  <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
                 </div>
                 {expandedSupplier === group.supplier.id && (
-                  <div className="mt-2">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>PO ID</th>
-                          <th>Date</th>
-                          <th>Total</th>
-                          <th>Status</th>
+                  <table className="table mt-2">
+                    <thead>
+                      <tr><th>Date</th><th>Requested By</th><th>Status</th><th>Total</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                      {group.orders.map((order) => (
+                        <tr key={order.id}>
+                          <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
+                          <td>{order.requested_by?.full_name || 'N/A'}</td>
+                          <td>{order.status}</td>
+                          <td>KES {order.total}</td>
+                          <td>
+                            {order.status === 'pending' && (
+                              <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}>
+                                <i className="fas fa-check"></i> Receive
+                              </button>
+                            )}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {group.orders.map((order) => (
-                          <tr key={order.id}>
-                            <td>{order.id.slice(0, 8)}</td>
-                            <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
-                            <td>KES {order.total}</td>
-                            <td>
-                              <span className={`status ${order.status}`}>{order.status}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             ))}
-            {groupedBySupplier.length === 0 && (
-              <p className="alert alert-info">No purchase orders found.</p>
-            )}
           </div>
         )}
       </div>
 
-      {/* New Supplier Modal (Modern) */}
+      {/* Add Product Modal */}
+      {showProductModal && modalProduct && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-cart-plus"></i> Add to Purchase</h3>
+              <button className="modal-close" onClick={() => setShowProductModal(false)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body">
+              <p><strong>{modalProduct.name}</strong></p>
+              <div className="form-group">
+                <label>Quantity</label>
+                <input type="number" min="1" value={modalQty} onChange={(e) => setModalQty(parseInt(e.target.value) || 1)} className="input" />
+              </div>
+              <div className="form-group">
+                <label>Buy Price</label>
+                <input type="number" min="0" step="0.01" value={modalBuyPrice} onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} className="input" />
+              </div>
+              <div className="form-group">
+                <label>Discount (KES)</label>
+                <input type="number" min="0" step="0.01" value={modalDiscount} onChange={(e) => setModalDiscount(parseFloat(e.target.value) || 0)} className="input" />
+              </div>
+              <p className="pos-grand-total">Total: KES {(modalQty * modalBuyPrice - modalDiscount).toFixed(2)}</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowProductModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmAddProduct}>Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Supplier Modal */}
       {showSupplierModal && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h3 className="modal-title">
-                <i className="fas fa-truck"></i> New Supplier
-              </h3>
-              <button className="modal-close" onClick={closeSupplierModal} aria-label="Close">
-                <i className="fas fa-times"></i>
-              </button>
+              <h3 className="modal-title"><i className="fas fa-truck"></i> New Supplier</h3>
+              <button className="modal-close" onClick={closeSupplierModal}><i className="fas fa-times"></i></button>
             </div>
-
             <div className="modal-body">
               <div className="form-group">
-                <label>
-                  <i className="fas fa-building" style={{ marginRight: '6px' }}></i>
-                  Supplier Name *
-                </label>
-                <input
-                  type="text"
-                  value={supplierForm.name}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
-                  className="input"
-                  placeholder="e.g., Agrovet Supplies Ltd"
-                  autoFocus
-                />
+                <label>Supplier Name *</label>
+                <input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} className="input" />
               </div>
-
               <div className="form-group">
-                <label>
-                  <i className="fas fa-phone-alt" style={{ marginRight: '6px' }}></i>
-                  Phone
-                </label>
-                <input
-                  type="text"
-                  value={supplierForm.phone}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
-                  className="input"
-                  placeholder="e.g., 0712345678"
-                />
+                <label>Phone</label>
+                <input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} className="input" />
               </div>
-
               <div className="form-group">
-                <label>
-                  <i className="fas fa-map-marker-alt" style={{ marginRight: '6px' }}></i>
-                  Address
-                </label>
-                <input
-                  type="text"
-                  value={supplierForm.address}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
-                  className="input"
-                  placeholder="e.g., Nandi Hills, Kenya"
-                />
+                <label>Address</label>
+                <input type="text" value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} className="input" />
               </div>
             </div>
-
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={closeSupplierModal}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={submitSupplier}>
-                <i className="fas fa-save" style={{ marginRight: '6px' }}></i>
-                Save Supplier
-              </button>
+              <button className="btn btn-outline" onClick={closeSupplierModal}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitSupplier}>Save Supplier</button>
             </div>
           </div>
         </div>
