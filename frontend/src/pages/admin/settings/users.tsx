@@ -148,7 +148,10 @@ export default function AdminUsers() {
   return (
     <Layout>
       <div className="flex justify-between items-center mb-4">
-        <h1>Manage All Users</h1>
+        <div>
+          <h1>Manage All Users</h1>
+          <p className="text-muted">Create, edit, and manage system users.</p>
+        </div>
         <button className="btn btn-primary" onClick={handleOpenAddForm}>
           <i className="fas fa-user-plus" style={{ marginRight: '6px' }}></i> Add User
         </button>
@@ -181,12 +184,20 @@ export default function AdminUsers() {
                   </span>
                 </td>
                 <td>
-                  <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditForm(u)}>Edit</button>
-                  <button className="btn btn-sm btn-outline" onClick={() => handleResetPassword(u.id)}>Reset Password</button>
+                  <button className="btn btn-sm btn-outline" onClick={() => handleOpenEditForm(u)}>
+                    <i className="fas fa-edit"></i> Edit
+                  </button>
+                  <button className="btn btn-sm btn-outline" onClick={() => handleResetPassword(u.id)}>
+                    <i className="fas fa-key"></i> Reset
+                  </button>
                   {u.status === 'active' ? (
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(u.id, u.status)}>Deactivate</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(u.id, u.status)}>
+                      <i className="fas fa-ban"></i> Deactivate
+                    </button>
                   ) : (
-                    <button className="btn btn-sm btn-primary" onClick={() => handleDeactivate(u.id, u.status)}>Activate</button>
+                    <button className="btn btn-sm btn-primary" onClick={() => handleDeactivate(u.id, u.status)}>
+                      <i className="fas fa-check"></i> Activate
+                    </button>
                   )}
                 </td>
               </tr>
@@ -202,28 +213,43 @@ export default function AdminUsers() {
       {showForm && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>{editingUser ? 'Edit User' : 'Add User'}</h3>
-            <div className="flex flex-col gap-2">
-              <label>Full Name</label>
-              <input type="text" value={formData.fullName} onChange={(e) => handleFormChange('fullName', e.target.value)} className="input" />
-              <label>Username</label>
-              <input type="text" value={formData.username} onChange={(e) => handleFormChange('username', e.target.value)} className="input" />
-              {!editingUser && (
-                <>
-                  <label>Password</label>
-                  <input type="password" value={formData.password} onChange={(e) => handleFormChange('password', e.target.value)} className="input" />
-                </>
-              )}
-              <label>Role</label>
-              <select value={formData.role} onChange={(e) => handleFormChange('role', e.target.value)} className="input">
-                <option value="cashier">Cashier</option>
-                <option value="manager">Manager</option>
-                <option value="admin">Admin</option>
-              </select>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fas fa-user-cog"></i> {editingUser ? 'Edit User' : 'Add User'}
+              </h3>
+              <button className="modal-close" onClick={() => setShowForm(false)} aria-label="Close">
+                <i className="fas fa-times"></i>
+              </button>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitForm}>Save</button>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Full Name *</label>
+                <input type="text" value={formData.fullName} onChange={(e) => handleFormChange('fullName', e.target.value)} className="input" placeholder="e.g., John Doe" />
+              </div>
+              <div className="form-group">
+                <label>Username *</label>
+                <input type="text" value={formData.username} onChange={(e) => handleFormChange('username', e.target.value)} className="input" placeholder="e.g., john" />
+              </div>
+              {!editingUser && (
+                <div className="form-group">
+                  <label>Password *</label>
+                  <input type="password" value={formData.password} onChange={(e) => handleFormChange('password', e.target.value)} className="input" placeholder="Enter password" />
+                </div>
+              )}
+              <div className="form-group">
+                <label>Role</label>
+                <select value={formData.role} onChange={(e) => handleFormChange('role', e.target.value)} className="input">
+                  <option value="cashier">Cashier</option>
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitForm}>
+                <i className="fas fa-save" style={{ marginRight: '6px' }}></i> Save
+              </button>
             </div>
           </div>
         </div>
@@ -233,12 +259,25 @@ export default function AdminUsers() {
       {resetPasswordUserId && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>Reset Password</h3>
-            <label>New Password</label>
-            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="input" />
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitResetPassword}>Reset</button>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fas fa-key"></i> Reset Password
+              </h3>
+              <button className="modal-close" onClick={() => setResetPasswordUserId(null)} aria-label="Close">
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>New Password</label>
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="input" placeholder="Enter new password" />
+              </div>
+            </div>
+            <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setResetPasswordUserId(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitResetPassword}>
+                <i className="fas fa-check" style={{ marginRight: '6px' }}></i> Reset
+              </button>
             </div>
           </div>
         </div>
