@@ -24,9 +24,10 @@ export default function Sidebar({ role }: SidebarProps) {
   const cashierLinks = [
     { path: '/cashier/dashboard', label: 'Dashboard', icon: 'fa-gauge' },
     { path: '/cashier/pos', label: 'POS', icon: 'fa-cash-register' },
-    { path: '/cashier/sales', label: 'My Sales', icon: 'fa-receipt' },
+    { path: '/cashier/sales', label: 'Sales', icon: 'fa-receipt' },
     { path: '/cashier/returns', label: 'Returns', icon: 'fa-rotate-left' },
     { path: '/cashier/credit', label: 'Credit', icon: 'fa-file-invoice-dollar' },
+    { path: '/admin/purchases', label: 'Purchases', icon: 'fa-cart-shopping' },
   ];
 
   const links = role === 'cashier' ? cashierLinks : adminLinks;
