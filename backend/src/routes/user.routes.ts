@@ -1,7 +1,6 @@
 import express from 'express';
 import {
   listUsers,
-  listCashiers,
   createUser,
   updateUser,
   resetPassword,
@@ -10,9 +9,6 @@ import {
 import { authenticate, authorize } from '../middleware/auth.middleware';
 
 const router = express.Router();
-
-// Cashier list – accessible by any authenticated user (for POS selection)
-router.get('/cashiers', authenticate, listCashiers);
 
 // Admin-only routes
 router.use(authenticate, authorize('admin'));
