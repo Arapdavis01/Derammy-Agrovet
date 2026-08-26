@@ -65,7 +65,7 @@ export default function AdminDashboard() {
           value={`KES ${stockValue.toLocaleString()}`} 
           subtitle={`${productsCount} items in stock | ${lowStockCount} low stock`}
           icon="fa-boxes-stacked" 
-          color="#1B5E20"
+          color="#0F766E"
           onClick={() => router.push('/admin/inventory')}
         />
         <Card 
@@ -73,7 +73,7 @@ export default function AdminDashboard() {
           value={`KES ${totalSales.toLocaleString()}`} 
           subtitle={`Today: KES ${todaySales.toLocaleString()} (${todaySalesCount} sales)`}
           icon="fa-money-bill-trend-up" 
-          color="#F57C00"
+          color="#D97757"
           onClick={() => router.push('/admin/sales')}
         />
         <Card 
@@ -81,7 +81,7 @@ export default function AdminDashboard() {
           value={`KES ${creditOutstanding.toLocaleString()}`} 
           subtitle={`${creditCustomersCount} owing | Paid today: KES 0`}
           icon="fa-file-invoice-dollar" 
-          color="#0288D1"
+          color="#0EA5E9"
           onClick={() => router.push('/admin/credit')}
         />
         <Card 
@@ -89,7 +89,7 @@ export default function AdminDashboard() {
           value={returnsToday.toString()} 
           subtitle={`Today: ${returnsToday} returns | 0 exchanges`}
           icon="fa-rotate-left" 
-          color="#D32F2F"
+          color="#F43F5E"
           onClick={() => router.push('/admin/returns')}
         />
       </div>
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
           value={`${purchasesCount} POs`} 
           subtitle={`Today: KES 0 | 0 active today`}
           icon="fa-cart-shopping" 
-          color="#FFA000"
+          color="#F59E0B"
           onClick={() => router.push('/admin/purchases')}
         />
         <Card 
@@ -108,7 +108,7 @@ export default function AdminDashboard() {
           value={productsCount.toString()} 
           subtitle={`${lowStockCount} low stock | ${expiringSoonCount} expiring soon`}
           icon="fa-tags" 
-          color="#4CAF50"
+          color="#10B981"
           onClick={() => router.push('/admin/products')}
         />
         <Card 
@@ -116,7 +116,7 @@ export default function AdminDashboard() {
           value="Analytics" 
           subtitle="View analytics & reports"
           icon="fa-chart-line" 
-          color="#9C27B0"
+          color="#8B5CF6"
           onClick={() => router.push('/admin/reports')}
         />
         <Card 
@@ -124,7 +124,7 @@ export default function AdminDashboard() {
           value={topProductsToday.length > 0 ? topProductsToday[0]?.name : 'No sales yet'} 
           subtitle={topProductsToday.length > 0 ? `Quantity: ${topProductsToday[0]?.quantity}` : ''}
           icon="fa-star" 
-          color="#607D8B"
+          color="#EC4899"
           onClick={() => router.push('/admin/reports')}
         />
       </div>
@@ -143,13 +143,13 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody>
-              {cashierPerformance.map((c: any) => (
-                <tr key={c.user_id}>
-                  <td>{c.full_name}</td>
-                  <td>KES {c.today_sales.toLocaleString()}</td>
-                  <td>{c.today_count} sales</td>
-                  <td>KES {c.total_sales.toLocaleString()}</td>
-                  <td>{c.total_count} sales</td>
+              {cashierPerformance.map((c: any, index: number) => (
+                <tr key={c.cashier_id || c.user_id || index}>
+                  <td>{c.full_name || 'Unknown'}</td>
+                  <td>KES {(c.today_sales || 0).toLocaleString()}</td>
+                  <td>{c.today_count || 0} sales</td>
+                  <td>KES {(c.total_sales || 0).toLocaleString()}</td>
+                  <td>{c.total_count || 0} sales</td>
                 </tr>
               ))}
             </tbody>
