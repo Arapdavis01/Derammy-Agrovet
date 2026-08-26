@@ -4,31 +4,19 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from '../config/supabase';
 import { AppError } from '../utils/errorHandler';
 
-// List all users (admin only)
+// List all staff users (admin/manager) – admin only
 export const listUsers = async (req: Request, res: Response) => {
   const { data, error } = await supabaseAdmin
     .from('users')
     .select('id, full_name, username, email, role, status, created_at')
+    .in('role', ['admin', 'manager'])
     .order('created_at', { ascending: false });
 
   if (error) throw new AppError('Failed to fetch users', 500);
   res.json(data);
 };
 
-// List all active cashiers (for POS cashier selection)
-export const listCashiers = async (req: Request, res: Response) => {
-  const { data, error } = await supabaseAdmin
-    .from('users')
-    .select('id, full_name, username')
-    .eq('role', 'cashier')
-    .eq('status', 'active')
-    .order('full_name', { ascending: true });
-
-  if (error) throw new AppError('Failed to fetch cashiers', 500);
-  res.json(data);
-};
-
-// Create new user (admin only)
+// Create new staff user (admin/manager only)
 export const createUser = async (req: Request, res: Response) => {
   const { fullName, username, password, role } = req.body;
 
@@ -36,9 +24,9 @@ export const createUser = async (req: Request, res: Response) => {
     throw new AppError('Full name, username, password, and role are required', 400);
   }
 
-  const validRoles = ['admin', 'cashier', 'manager'];
+  const validRoles = ['admin', 'manager'];
   if (!validRoles.includes(role)) {
-    throw new AppError('Invalid role', 400);
+    throw new AppError('Invalid role. Only admin and manager are allowed.', 400);
   }
 
   // Check if username already exists
@@ -75,7 +63,7 @@ export const createUser = async (req: Request, res: Response) => {
   res.status(201).json(newUser);
 };
 
-// Update user (admin only)
+// Update staff user (admin only)
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { fullName, username, role, status } = req.body;
@@ -121,7 +109,7 @@ export const resetPassword = async (req: Request, res: Response) => {
   res.json({ message: 'Password updated successfully' });
 };
 
-// Deactivate user (soft delete)
+// Deactivate staff user (soft delete)
 export const deactivateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { data, error } = await supabaseAdmin
