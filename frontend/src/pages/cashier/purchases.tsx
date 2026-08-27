@@ -227,7 +227,6 @@ export default function CashierPurchases() {
     setEditingPONumber('');
   };
 
-  // Submit or show edit modal
   const submitPurchaseOrder = () => {
     if (!selectedSupplier) {
       toast.error('Please select a supplier');
@@ -243,7 +242,6 @@ export default function CashierPurchases() {
     }
 
     if (editingPurchaseId) {
-      // Show edit cashier modal
       setEditedBy('');
       setPendingEditData({
         supplier_id: selectedSupplier,
@@ -313,13 +311,19 @@ export default function CashierPurchases() {
     }
   };
 
-  const startEdit = (purchase: Purchase) => {
-    setEditingPurchaseId(purchase.id);
-    setEditingPONumber(purchase.po_number);
-    setSelectedSupplier(purchase.supplier_id);
-    setNotes('');
-    setPurchaseItems(
-      (purchase.purchase_items || []).map((item: any) => ({
+  // ✅ Fixed: fetch full purchase details when editing
+  const startEdit = async (purchaseId: string) => {
+    try {
+      const res = await api.get(`/purchases/${purchaseId}`);
+      const purchase = res.data;
+
+      setEditingPurchaseId(purchase.id);
+      setEditingPONumber(purchase.po_number);
+      setSelectedSupplier(purchase.supplier_id);
+      setNotes('');
+
+      // Load existing items
+      const items = (purchase.purchase_items || []).map((item: any) => ({
         product: {
           id: item.product_id,
           name: item.product?.name || 'Unknown',
@@ -331,14 +335,20 @@ export default function CashierPurchases() {
         },
         quantity: item.quantity,
         cost_price: item.cost_price,
-      }))
-    );
-    const cashierName = purchase.requested_by_user?.full_name || '';
-    const cashier = cashiers.find((c) => c.full_name === cashierName);
-    setRequestedBy(cashier?.id || '');
-    setOverallDiscount(0);
-    setDiscountType('kes');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+      }));
+      setPurchaseItems(items);
+
+      // Set requested by
+      const cashierName = purchase.requested_by_user?.full_name || '';
+      const cashier = cashiers.find((c) => c.full_name === cashierName);
+      setRequestedBy(cashier?.id || '');
+
+      setOverallDiscount(0);
+      setDiscountType('kes');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (error: any) {
+      toast.error('Failed to load purchase details');
+    }
   };
 
   const receivePurchase = async (purchaseId: string) => {
@@ -574,7 +584,7 @@ export default function CashierPurchases() {
                             <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order)}><i className="fas fa-print"></i></button>
                             {order.status === 'pending' && (
                               <>
-                                <button className="btn btn-sm btn-primary" onClick={() => startEdit(order)}><i className="fas fa-edit"></i></button>
+                                <button className="btn btn-sm btn-primary" onClick={() => startEdit(order.id)}><i className="fas fa-edit"></i></button>
                                 <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}><i className="fas fa-check"></i></button>
                               </>
                             )}
