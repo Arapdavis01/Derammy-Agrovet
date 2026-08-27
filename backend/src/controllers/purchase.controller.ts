@@ -140,11 +140,12 @@ export const listPurchases = async (req: Request, res: Response) => {
     .from('purchases')
     .select(`
       id, po_number, supplier_id, purchase_date, total, status, user_id,
-      requested_by, received_by,
+      requested_by, received_by, edited_by,
       supplier:suppliers(id, name),
       user:users(id, full_name),
       requested_by_user:cashiers!purchases_requested_by_fkey(id, full_name),
-      received_by_user:cashiers!purchases_received_by_fkey(id, full_name)
+      received_by_user:cashiers!purchases_received_by_fkey(id, full_name),
+      edited_by_user:cashiers!purchases_edited_by_fkey(id, full_name)
     `, { count: 'exact' })
     .order('purchase_date', { ascending: false })
     .range(offset, offset + limitNum - 1);
@@ -176,6 +177,7 @@ export const getPurchase = async (req: Request, res: Response) => {
       user:users(id, full_name),
       requested_by_user:cashiers!purchases_requested_by_fkey(id, full_name),
       received_by_user:cashiers!purchases_received_by_fkey(id, full_name),
+      edited_by_user:cashiers!purchases_edited_by_fkey(id, full_name),
       purchase_items(
         id, product_id, batch_id, quantity, cost_price, total,
         product:products(id, name, unit)
@@ -186,6 +188,87 @@ export const getPurchase = async (req: Request, res: Response) => {
 
   if (error || !data) throw new AppError('Purchase not found', 404);
   res.json(data);
+};
+
+// Edit purchase (only pending)
+export const editPurchase = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const {
+    supplier_id,
+    items,
+    edited_by,
+    total,
+  } = req.body as any;
+
+  if (!supplier_id) throw new AppError('Supplier is required', 400);
+  if (!items || items.length === 0) throw new AppError('No items provided', 400);
+  if (!edited_by) throw new AppError('Edited by is required', 400);
+
+  // Fetch purchase
+  const { data: purchase, error: fetchError } = await supabaseAdmin
+    .from('purchases')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (fetchError || !purchase) throw new AppError('Purchase not found', 404);
+  if (purchase.status !== 'pending') throw new AppError('Only pending purchases can be edited', 400);
+
+  // Delete old items
+  const { error: deleteItemsError } = await supabaseAdmin
+    .from('purchase_items')
+    .delete()
+    .eq('purchase_id', id);
+
+  if (deleteItemsError) throw new AppError('Failed to clear old items', 500);
+
+  // Insert new items
+  for (const item of items) {
+    const { product_id, quantity, cost_price, batch_number, expiry_date } = item;
+    if (!product_id || !quantity || quantity <= 0) {
+      throw new AppError('Invalid item data', 400);
+    }
+
+    let price = cost_price;
+    if (!price) {
+      const { data: product } = await supabaseAdmin
+        .from('products')
+        .select('cost_price')
+        .eq('id', product_id)
+        .single();
+      if (!product) throw new AppError(`Product not found: ${product_id}`, 404);
+      price = product.cost_price;
+    }
+
+    const lineTotal = Number(quantity) * Number(price);
+    const { error: insertError } = await supabaseAdmin
+      .from('purchase_items')
+      .insert({
+        purchase_id: id,
+        product_id,
+        quantity,
+        cost_price: price,
+        total: lineTotal,
+      });
+
+    if (insertError) {
+      throw new AppError('Failed to insert new items', 500);
+    }
+  }
+
+  // Update purchase
+  const { error: updateError } = await supabaseAdmin
+    .from('purchases')
+    .update({
+      supplier_id,
+      total: total || 0,
+      edited_by,
+    })
+    .eq('id', id);
+
+  if (updateError) throw new AppError('Failed to update purchase', 500);
+
+  res.json({ message: 'Purchase updated successfully', purchase_id: id });
 };
 
 // Receive purchase (update stock and status)
@@ -207,11 +290,12 @@ export const receivePurchase = async (req: Request, res: Response) => {
   if (purchase.status === 'received') throw new AppError('Purchase already received', 400);
 
   // Fetch purchase items
-  const { data: items } = await supabaseAdmin
+  const { data: items, error: itemsError } = await supabaseAdmin
     .from('purchase_items')
     .select('*')
     .eq('purchase_id', id);
 
+  if (itemsError) throw new AppError('Failed to fetch purchase items', 500);
   if (!items || items.length === 0) throw new AppError('No items found for this purchase', 400);
 
   // Add stock for each item
