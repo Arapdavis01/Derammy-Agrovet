@@ -3,6 +3,7 @@ import {
   createPurchase,
   listPurchases,
   getPurchase,
+  editPurchase,
   receivePurchase,
 } from '../controllers/purchase.controller';
 import { authenticate, authorize } from '../middleware/auth.middleware';
@@ -20,6 +21,9 @@ router.get('/', listPurchases);
 
 // View single purchase
 router.get('/:id', getPurchase);
+
+// Edit pending purchase (admin/manager/cashier)
+router.put('/:id/edit', authorize('admin', 'manager', 'cashier'), editPurchase);
 
 // Receive purchase (admin/manager/cashier)
 router.put('/:id/receive', authorize('admin', 'manager', 'cashier'), receivePurchase);
