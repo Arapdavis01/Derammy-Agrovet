@@ -57,6 +57,7 @@ export default function CashierPurchases() {
   // Create/Edit PO states
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [notes, setNotes] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
@@ -64,10 +65,16 @@ export default function CashierPurchases() {
   const [discountType, setDiscountType] = useState<'kes' | 'pct'>('kes');
   const [creating, setCreating] = useState(false);
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
+  const [editingPONumber, setEditingPONumber] = useState('');
 
   // Cashiers
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [requestedBy, setRequestedBy] = useState('');
+  const [editedBy, setEditedBy] = useState('');
+
+  // Edit cashier modal
+  const [showEditCashierModal, setShowEditCashierModal] = useState(false);
+  const [pendingEditData, setPendingEditData] = useState<any>(null);
 
   // Add product modal
   const [showProductModal, setShowProductModal] = useState(false);
@@ -87,7 +94,7 @@ export default function CashierPurchases() {
   const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Print modal
+  // Print
   const [printPO, setPrintPO] = useState<Purchase | null>(null);
 
   useEffect(() => {
@@ -213,12 +220,15 @@ export default function CashierPurchases() {
   const resetForm = () => {
     setPurchaseItems([]);
     setSelectedSupplier('');
+    setNotes('');
     setOverallDiscount(0);
     setRequestedBy('');
     setEditingPurchaseId(null);
+    setEditingPONumber('');
   };
 
-  const submitPurchaseOrder = async () => {
+  // Submit or show edit modal
+  const submitPurchaseOrder = () => {
     if (!selectedSupplier) {
       toast.error('Please select a supplier');
       return;
@@ -231,6 +241,28 @@ export default function CashierPurchases() {
       toast.error('Select who is requesting this purchase');
       return;
     }
+
+    if (editingPurchaseId) {
+      // Show edit cashier modal
+      setEditedBy('');
+      setPendingEditData({
+        supplier_id: selectedSupplier,
+        items: purchaseItems.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          cost_price: item.cost_price,
+          batch_number: item.batch_number,
+          expiry_date: item.expiry_date,
+        })),
+        total: totalBuy,
+      });
+      setShowEditCashierModal(true);
+    } else {
+      createPurchase();
+    }
+  };
+
+  const createPurchase = async () => {
     setCreating(true);
     try {
       const items = purchaseItems.map((item) => ({
@@ -241,24 +273,15 @@ export default function CashierPurchases() {
         expiry_date: item.expiry_date,
       }));
 
-      if (editingPurchaseId) {
-        await api.put(`/purchases/${editingPurchaseId}/edit`, {
-          supplier_id: selectedSupplier,
-          items,
-          edited_by: requestedBy,
-          total: totalBuy,
-        });
-        toast.success('Purchase order updated');
-      } else {
-        const res = await api.post('/purchases', {
-          supplier_id: selectedSupplier,
-          items,
-          status: 'pending',
-          requested_by: requestedBy,
-          total: totalBuy,
-        });
-        toast.success(`PO ${res.data.po_number} created!`);
-      }
+      const res = await api.post('/purchases', {
+        supplier_id: selectedSupplier,
+        items,
+        status: 'pending',
+        requested_by: requestedBy,
+        total: totalBuy,
+      });
+
+      toast.success(`PO ${res.data.po_number} created!`);
       resetForm();
       fetchHistory();
     } catch (error: any) {
@@ -268,12 +291,44 @@ export default function CashierPurchases() {
     }
   };
 
+  const confirmEditPurchase = async () => {
+    if (!editedBy) {
+      toast.error('Select your name to confirm edit');
+      return;
+    }
+    setCreating(true);
+    try {
+      await api.put(`/purchases/${editingPurchaseId}/edit`, {
+        ...pendingEditData,
+        edited_by: editedBy,
+      });
+      toast.success('Purchase order updated successfully');
+      setShowEditCashierModal(false);
+      resetForm();
+      fetchHistory();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to update purchase order');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const startEdit = (purchase: Purchase) => {
     setEditingPurchaseId(purchase.id);
+    setEditingPONumber(purchase.po_number);
     setSelectedSupplier(purchase.supplier_id);
+    setNotes('');
     setPurchaseItems(
       (purchase.purchase_items || []).map((item: any) => ({
-        product: item.product,
+        product: {
+          id: item.product_id,
+          name: item.product?.name || 'Unknown',
+          sku: item.product?.sku || '',
+          unit: item.product?.unit || 'pcs',
+          cost_price: item.cost_price,
+          selling_price: item.product?.selling_price || 0,
+          track_batch_expiry: false,
+        },
         quantity: item.quantity,
         cost_price: item.cost_price,
       }))
@@ -350,7 +405,7 @@ export default function CashierPurchases() {
       {/* Create/Edit Purchase Order */}
       <div className="card">
         <h2 className="card-title">
-          <i className="fas fa-cart-plus"></i> {editingPurchaseId ? 'Edit Purchase Order' : 'Create Purchase Order'}
+          <i className="fas fa-cart-plus"></i> {editingPurchaseId ? `Edit Purchase Order (${editingPONumber})` : 'Create Purchase Order'}
         </h2>
 
         <div className="grid grid-cols-2 gap-4 mt-4">
@@ -361,19 +416,25 @@ export default function CashierPurchases() {
               {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
+          <div>
+            <label>Notes</label>
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="input" placeholder="Order notes..." />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mt-2">
+          <div>
+            <label>Requested By *</label>
+            <select value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} className="input">
+              <option value="">Select cashier...</option>
+              {cashiers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+            </select>
+          </div>
           <div className="flex items-end">
             <button className="btn btn-outline btn-sm" onClick={openSupplierModal}>
               <i className="fas fa-plus"></i> New Supplier
             </button>
           </div>
-        </div>
-
-        <div className="mt-4">
-          <label>Requested By *</label>
-          <select value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} className="input">
-            <option value="">Select cashier...</option>
-            {cashiers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-          </select>
         </div>
 
         <div className="mt-4">
@@ -405,7 +466,7 @@ export default function CashierPurchases() {
         {purchaseItems.length > 0 ? (
           <table className="table mt-4">
             <thead>
-              <tr><th>Product</th><th>Qty</th><th>Unit</th><th>Buy Price</th><th>Sell Price</th><th>Discount</th><th>Total</th><th></th></tr>
+              <tr><th>Product</th><th>Qty</th><th>Unit</th><th>Buy Price</th><th>Sell Price</th><th>Total</th><th></th></tr>
             </thead>
             <tbody>
               {purchaseItems.map((item) => (
@@ -415,7 +476,6 @@ export default function CashierPurchases() {
                   <td>{item.product.unit}</td>
                   <td>KES {item.cost_price}</td>
                   <td>KES {item.product.selling_price}</td>
-                  <td>0</td>
                   <td>KES {(item.quantity * item.cost_price).toFixed(2)}</td>
                   <td><button className="btn btn-sm btn-danger" onClick={() => removeItem(item.product.id)}><i className="fas fa-times"></i></button></td>
                 </tr>
@@ -472,65 +532,86 @@ export default function CashierPurchases() {
 
         {loadingHistory ? <p>Loading...</p> : (
           <div className="mt-4">
-            {groupedBySupplier.map((group) => {
-              const pendingCount = group.orders.filter((o) => o.status === 'pending').length;
-              const receivedCount = group.orders.filter((o) => o.status === 'received').length;
-              return (
-                <div key={group.supplier.id} className="card mb-2">
-                  <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}>
-                    <div>
-                      <strong>{group.supplier.name}</strong>
-                      <p className="text-muted">
-                        {group.orders.length} orders | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}
-                      </p>
-                      <span className="text-muted">{pendingCount} pending {receivedCount} received</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
-                      <i className={`fas fa-chevron-${expandedSupplier === group.supplier.id ? 'up' : 'down'}`}></i>
-                    </div>
+            {groupedBySupplier.map((group) => (
+              <div key={group.supplier.id} className="card mb-2">
+                <div className="flex justify-between items-center cursor-pointer" onClick={() => setExpandedSupplier(expandedSupplier === group.supplier.id ? null : group.supplier.id)}>
+                  <div>
+                    <strong>{group.supplier.name}</strong>
+                    <p className="text-muted">
+                      {group.orders.length} orders | Last: {group.orders[0] ? new Date(group.orders[0].purchase_date).toLocaleDateString() : ''}
+                    </p>
                   </div>
-                  {expandedSupplier === group.supplier.id && (
-                    <table className="table mt-2">
-                      <thead>
-                        <tr><th>PO Number</th><th>Requested By</th><th>Received By</th><th>Edited By</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr>
-                      </thead>
-                      <tbody>
-                        {group.orders.map((order) => (
-                          <tr key={order.id}>
-                            <td><strong>{order.po_number || order.id.slice(0, 8)}</strong></td>
-                            <td>{order.requested_by_user?.full_name || 'N/A'}</td>
-                            <td>{order.received_by_user?.full_name || 'N/A'}</td>
-                            <td>{order.edited_by_user?.full_name || 'N/A'}</td>
-                            <td>KES {order.total}</td>
-                            <td><span className={`status ${order.status}`}>{order.status}</span></td>
-                            <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
-                            <td>
-                              <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order)}>
-                                <i className="fas fa-print"></i> Print
-                              </button>
-                              {order.status === 'pending' && (
-                                <>
-                                  <button className="btn btn-sm btn-primary" onClick={() => startEdit(order)}>
-                                    <i className="fas fa-edit"></i> Edit
-                                  </button>
-                                  <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}>
-                                    <i className="fas fa-check"></i> Receive
-                                  </button>
-                                </>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span>KES {group.orders.reduce((sum, o) => sum + Number(o.total), 0).toFixed(2)}</span>
+                    <i className={`fas fa-chevron-${expandedSupplier === group.supplier.id ? 'up' : 'down'}`}></i>
+                  </div>
                 </div>
-              );
-            })}
+                {expandedSupplier === group.supplier.id && (
+                  <table className="table mt-2">
+                    <thead>
+                      <tr>
+                        <th>PO Number</th>
+                        <th>Requested By</th>
+                        <th>Received By</th>
+                        {group.orders.some(o => o.edited_by_user) && <th>Edited By</th>}
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.orders.map((order) => (
+                        <tr key={order.id}>
+                          <td><strong>{order.po_number || order.id.slice(0, 8)}</strong></td>
+                          <td>{order.requested_by_user?.full_name || 'N/A'}</td>
+                          <td>{order.received_by_user?.full_name || 'N/A'}</td>
+                          {group.orders.some(o => o.edited_by_user) && <td>{order.edited_by_user?.full_name || 'N/A'}</td>}
+                          <td>KES {order.total}</td>
+                          <td><span className={`status ${order.status}`}>{order.status}</span></td>
+                          <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
+                          <td>
+                            <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order)}><i className="fas fa-print"></i></button>
+                            {order.status === 'pending' && (
+                              <>
+                                <button className="btn btn-sm btn-primary" onClick={() => startEdit(order)}><i className="fas fa-edit"></i></button>
+                                <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}><i className="fas fa-check"></i></button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
+
+      {/* Edit Cashier Modal */}
+      {showEditCashierModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-user-check"></i> Confirm Edit</h3>
+              <button className="modal-close" onClick={() => setShowEditCashierModal(false)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body">
+              <p>Who is editing this purchase order?</p>
+              <select value={editedBy} onChange={(e) => setEditedBy(e.target.value)} className="input">
+                <option value="">Select your name...</option>
+                {cashiers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+              </select>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowEditCashierModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmEditPurchase}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print PO Modal */}
       {printPO && (
@@ -555,11 +636,9 @@ export default function CashierPurchases() {
               <p>Status: {printPO.status}</p>
               <p>Requested By: {printPO.requested_by_user?.full_name || 'N/A'}</p>
               <p>Received By: {printPO.received_by_user?.full_name || 'N/A'}</p>
-              <p>Edited By: {printPO.edited_by_user?.full_name || 'N/A'}</p>
+              {printPO.edited_by_user && <p>Edited By: {printPO.edited_by_user.full_name}</p>}
               <table className="table mt-2">
-                <thead>
-                  <tr><th>Product</th><th>Qty</th><th>Unit</th><th>Buy Price</th><th>Total</th></tr>
-                </thead>
+                <thead><tr><th>Product</th><th>Qty</th><th>Unit</th><th>Buy Price</th><th>Total</th></tr></thead>
                 <tbody>
                   {printPO.purchase_items?.map((item: any) => (
                     <tr key={item.id}>
