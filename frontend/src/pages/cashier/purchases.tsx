@@ -351,7 +351,6 @@ export default function CashierPurchases() {
     }
   };
 
-  // Receive with cashier modal
   const openReceiveModal = (purchaseId: string) => {
     setReceivingPurchaseId(purchaseId);
     setReceivedBy('');
@@ -377,7 +376,15 @@ export default function CashierPurchases() {
     }
   };
 
-  const openPrintModal = (purchase: Purchase) => setPrintPO(purchase);
+  // ✅ Fixed: fetch full purchase for print
+  const openPrintModal = async (purchaseId: string) => {
+    try {
+      const res = await api.get(`/purchases/${purchaseId}`);
+      setPrintPO(res.data);
+    } catch (error: any) {
+      toast.error('Failed to load purchase details');
+    }
+  };
   const closePrintModal = () => setPrintPO(null);
 
   const openSupplierModal = () => setShowSupplierModal(true);
@@ -596,7 +603,7 @@ export default function CashierPurchases() {
                           <td><span className={`status ${order.status}`}>{order.status}</span></td>
                           <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
                           <td>
-                            <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order)}><i className="fas fa-print"></i></button>
+                            <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order.id)}><i className="fas fa-print"></i></button>
                             {order.status === 'pending' && (
                               <>
                                 <button className="btn btn-sm btn-primary" onClick={() => startEdit(order.id)}><i className="fas fa-edit"></i></button>
