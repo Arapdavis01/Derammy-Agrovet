@@ -71,10 +71,13 @@ export default function CashierPurchases() {
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [requestedBy, setRequestedBy] = useState('');
   const [editedBy, setEditedBy] = useState('');
+  const [receivedBy, setReceivedBy] = useState('');
 
-  // Edit cashier modal
+  // Modals
   const [showEditCashierModal, setShowEditCashierModal] = useState(false);
   const [pendingEditData, setPendingEditData] = useState<any>(null);
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [receivingPurchaseId, setReceivingPurchaseId] = useState<string | null>(null);
 
   // Add product modal
   const [showProductModal, setShowProductModal] = useState(false);
@@ -311,7 +314,6 @@ export default function CashierPurchases() {
     }
   };
 
-  // ✅ Fixed: fetch full purchase details when editing
   const startEdit = async (purchaseId: string) => {
     try {
       const res = await api.get(`/purchases/${purchaseId}`);
@@ -322,7 +324,6 @@ export default function CashierPurchases() {
       setSelectedSupplier(purchase.supplier_id);
       setNotes('');
 
-      // Load existing items
       const items = (purchase.purchase_items || []).map((item: any) => ({
         product: {
           id: item.product_id,
@@ -338,7 +339,6 @@ export default function CashierPurchases() {
       }));
       setPurchaseItems(items);
 
-      // Set requested by
       const cashierName = purchase.requested_by_user?.full_name || '';
       const cashier = cashiers.find((c) => c.full_name === cashierName);
       setRequestedBy(cashier?.id || '');
@@ -351,14 +351,29 @@ export default function CashierPurchases() {
     }
   };
 
-  const receivePurchase = async (purchaseId: string) => {
-    const receivedBy = user?.id;
+  // Receive with cashier modal
+  const openReceiveModal = (purchaseId: string) => {
+    setReceivingPurchaseId(purchaseId);
+    setReceivedBy('');
+    setShowReceiveModal(true);
+  };
+
+  const confirmReceivePurchase = async () => {
+    if (!receivedBy) {
+      toast.error('Select your name to confirm receiving');
+      return;
+    }
+    setCreating(true);
     try {
-      await api.put(`/purchases/${purchaseId}/receive`, { received_by: receivedBy });
+      await api.put(`/purchases/${receivingPurchaseId}/receive`, { received_by: receivedBy });
       toast.success('Stock received successfully');
+      setShowReceiveModal(false);
+      setReceivingPurchaseId(null);
       fetchHistory();
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to receive purchase');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -585,7 +600,7 @@ export default function CashierPurchases() {
                             {order.status === 'pending' && (
                               <>
                                 <button className="btn btn-sm btn-primary" onClick={() => startEdit(order.id)}><i className="fas fa-edit"></i></button>
-                                <button className="btn btn-sm btn-success" onClick={() => receivePurchase(order.id)}><i className="fas fa-check"></i></button>
+                                <button className="btn btn-sm btn-success" onClick={() => openReceiveModal(order.id)}><i className="fas fa-check"></i></button>
                               </>
                             )}
                           </td>
@@ -599,6 +614,29 @@ export default function CashierPurchases() {
           </div>
         )}
       </div>
+
+      {/* Receive Cashier Modal */}
+      {showReceiveModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-check-circle"></i> Receive Purchase</h3>
+              <button className="modal-close" onClick={() => setShowReceiveModal(false)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body">
+              <p>Who is receiving this purchase order?</p>
+              <select value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} className="input">
+                <option value="">Select your name...</option>
+                {cashiers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+              </select>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowReceiveModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmReceivePurchase}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Cashier Modal */}
       {showEditCashierModal && (
