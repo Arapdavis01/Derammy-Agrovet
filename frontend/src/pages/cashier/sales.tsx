@@ -48,7 +48,7 @@ export default function CashierSales() {
 
   const fetchCashiers = async () => {
     try {
-      const res = await api.get('/users/cashiers');
+      const res = await api.get('/cashiers/active');
       setCashiers(res.data || []);
     } catch (error) {
       // silent
@@ -58,7 +58,6 @@ export default function CashierSales() {
   const fetchSales = async () => {
     setLoading(true);
     try {
-      // We don't filter by user_id because shared cashier account should see all sales
       const params: any = { page, limit };
       if (filters.start_date) params.start_date = filters.start_date;
       if (filters.end_date) params.end_date = filters.end_date;
@@ -70,17 +69,13 @@ export default function CashierSales() {
       setSales(data);
       setTotalSales(res.data.total || 0);
 
-      // Compute summary from returned sales (may be limited to current page, so approximate)
-      // For better accuracy, we could make a separate summary endpoint later.
+      // Compute summary from current page (approximate)
       const today = new Date().toDateString();
       let todaySales = 0;
       let todayCount = 0;
       let totalAllSales = 0;
       let totalAllCount = 0;
 
-      // Fetch all sales? For now, we use current page only – but we can improve by requesting limit=1000 for summary.
-      // To keep it simple and correct, we'll fetch a separate summary from the backend if available.
-      // For now, set placeholder from current page data.
       data.forEach((sale: any) => {
         totalAllSales += Number(sale.total);
         totalAllCount += 1;
@@ -90,7 +85,6 @@ export default function CashierSales() {
         }
       });
 
-      // If there are more pages, the totals won't be accurate. We'll fix with a summary endpoint later.
       setSummary({
         today_sales: todaySales,
         today_count: todayCount,
