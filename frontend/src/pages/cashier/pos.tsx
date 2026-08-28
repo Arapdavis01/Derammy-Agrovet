@@ -73,6 +73,7 @@ export default function POS() {
   const [quickAddProduct, setQuickAddProduct] = useState<Product | null>(null);
   const [quickQty, setQuickQty] = useState(1);
   const [quickUnit, setQuickUnit] = useState<'base' | 'sales'>('base');
+  const [loadingProducts, setLoadingProducts] = useState(true);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -125,6 +126,7 @@ export default function POS() {
 
   const fetchAllProducts = useCallback(async () => {
     try {
+      setLoadingProducts(true);
       const [productsRes, inventoryRes] = await Promise.all([
         api.get('/products', { params: { limit: 200 } }),
         api.get('/inventory'),
@@ -141,6 +143,8 @@ export default function POS() {
       setStockMap(map);
     } catch (error) {
       toast.error('Failed to load products');
+    } finally {
+      setLoadingProducts(false);
     }
   }, []);
 
@@ -559,24 +563,37 @@ export default function POS() {
             />
           </div>
 
-          <div className="pos-product-grid">
-            {filteredProducts.map((product) => {
-              const stock = getProductStock(product);
-              return (
-                <div key={product.id} className="pos-product-card" onClick={() => openQuickAdd(product)}>
-                  <div className="pos-product-name">{product.name}</div>
-                  {product.sku && <div className="pos-product-sku">SKU: {product.sku}</div>}
-                  <div className="pos-product-price">
-                    {getPriceDisplay(product.selling_price, product.unit, product.sales_unit, product.conversion_factor)}
+          {loadingProducts && (
+            <div className="pos-loading-state">
+              <div className="spinner"></div>
+              <p>Loading products...</p>
+            </div>
+          )}
+
+          {!loadingProducts && (
+            <div className="pos-product-grid">
+              {filteredProducts.map((product) => {
+                const stock = getProductStock(product);
+                return (
+                  <div 
+                    key={product.id} 
+                    className={`pos-product-card ${stock <= 0 ? 'pos-product-out-of-stock' : ''}`} 
+                    onClick={() => openQuickAdd(product)}
+                  >
+                    <div className="pos-product-name">{product.name}</div>
+                    {product.sku && <div className="pos-product-sku">SKU: {product.sku}</div>}
+                    <div className="pos-product-price">
+                      {getPriceDisplay(product.selling_price, product.unit, product.sales_unit, product.conversion_factor)}
+                    </div>
+                    <div className={`pos-product-stock ${stock <= 0 ? 'out' : stock < 5 ? 'low' : 'ok'}`}>
+                      Stock: {getStockDisplay(stock, product.unit, product.sales_unit, product.conversion_factor)}
+                    </div>
                   </div>
-                  <div className={`pos-product-stock ${stock <= 0 ? 'out' : stock < 5 ? 'low' : 'ok'}`}>
-                    Stock: {getStockDisplay(stock, product.unit, product.sales_unit, product.conversion_factor)}
-                  </div>
-                </div>
-              );
-            })}
-            {filteredProducts.length === 0 && <p className="alert alert-info">No products found.</p>}
-          </div>
+                );
+              })}
+              {filteredProducts.length === 0 && <p className="alert alert-info">No products found.</p>}
+            </div>
+          )}
         </div>
 
         {/* Right: Cart & Payment */}
@@ -622,7 +639,20 @@ export default function POS() {
                 <div key={item.product.id} className="pos-cart-line">
                   <div className="pos-cart-info">
                     <strong>{item.product.name}</strong>
-                    <span>{item.quantity} {item.product.unit} x KES {item.product.selling_price}/{item.product.unit}</span>
+                    <span>
+                      {hasDualUnit(item.product.sales_unit, item.product.conversion_factor) ? (
+                        <>
+                          {item.quantity} {item.product.unit} × KES {getPriceForUnit(item.product.selling_price, 'base')}/{item.product.unit}
+                          {item.quantity >= (item.product.conversion_factor || 1) && (
+                            <span className="pos-cart-dual-price">
+                              (or {getPriceDisplay(item.product.selling_price, item.product.unit, item.product.sales_unit, item.product.conversion_factor)})
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span>{item.quantity} {item.product.unit} × KES {item.product.selling_price}/{item.product.unit}</span>
+                      )}
+                    </span>
                   </div>
                   <div className="pos-cart-controls">
                     <button className="btn btn-sm btn-outline" onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}>-</button>
