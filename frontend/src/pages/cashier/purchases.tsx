@@ -4,6 +4,13 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
+import {
+  getStockDisplay,
+  getPriceDisplay,
+  hasDualUnit,
+  convertToBaseUnits,
+  getPriceForUnit,
+} from '@/utils/productDisplay';
 
 interface Supplier {
   id: string;
@@ -20,6 +27,8 @@ interface Product {
   cost_price: number;
   selling_price: number;
   track_batch_expiry: boolean;
+  sales_unit?: string | null;
+  conversion_factor?: number | null;
   total_stock?: number;
 }
 
@@ -85,6 +94,7 @@ export default function CashierPurchases() {
   const [modalQty, setModalQty] = useState(1);
   const [modalBuyPrice, setModalBuyPrice] = useState(0);
   const [modalDiscount, setModalDiscount] = useState(0);
+  const [modalUnit, setModalUnit] = useState<'base' | 'sales'>('base');
 
   // Supplier modal
   const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -176,6 +186,7 @@ export default function CashierPurchases() {
     setModalQty(1);
     setModalBuyPrice(product.cost_price);
     setModalDiscount(0);
+    setModalUnit('base');
     setShowProductModal(true);
     setSearchResults([]);
     setProductSearch('');
@@ -187,12 +198,17 @@ export default function CashierPurchases() {
       toast.error('Quantity must be positive');
       return;
     }
+
+    // Convert to base units if sales unit selected
+    const baseQty = convertToBaseUnits(modalQty, modalUnit, modalProduct.conversion_factor);
+    const unitPrice = getPriceForUnit(modalBuyPrice, modalUnit, modalProduct.conversion_factor);
+
     setPurchaseItems([
       ...purchaseItems,
       {
         product: modalProduct,
-        quantity: modalQty,
-        cost_price: modalBuyPrice,
+        quantity: baseQty, // store in base units
+        cost_price: unitPrice, // price per base unit
       },
     ]);
     setShowProductModal(false);
@@ -333,6 +349,8 @@ export default function CashierPurchases() {
           cost_price: item.cost_price,
           selling_price: item.product?.selling_price || 0,
           track_batch_expiry: false,
+          sales_unit: item.product?.sales_unit || null,
+          conversion_factor: item.product?.conversion_factor || null,
         },
         quantity: item.quantity,
         cost_price: item.cost_price,
@@ -376,7 +394,6 @@ export default function CashierPurchases() {
     }
   };
 
-  // ✅ Fixed: fetch full purchase for print
   const openPrintModal = async (purchaseId: string) => {
     try {
       const res = await api.get(`/purchases/${purchaseId}`);
@@ -486,7 +503,7 @@ export default function CashierPurchases() {
                   <div className="pos-product-info">
                     <span className="pos-product-name">{product.name}</span>
                     <span className="pos-product-stock">
-                      Buy: KES {product.cost_price}/{product.unit} | Sell: KES {product.selling_price}/{product.unit} | Stock: {product.total_stock ?? 0} {product.unit}
+                      Buy: KES {product.cost_price}/{product.unit} | Sell: {getPriceDisplay(product.selling_price, product.unit, product.sales_unit, product.conversion_factor)} | Stock: {getStockDisplay(product.total_stock ?? 0, product.unit, product.sales_unit, product.conversion_factor)}
                     </span>
                   </div>
                 </div>
@@ -507,7 +524,7 @@ export default function CashierPurchases() {
                   <td><input type="number" min="0.1" step="0.1" value={item.quantity} onChange={(e) => updateItem(item.product.id, 'quantity', parseFloat(e.target.value) || 0)} className="input" style={{ width: '70px' }} /></td>
                   <td>{item.product.unit}</td>
                   <td>KES {item.cost_price}</td>
-                  <td>KES {item.product.selling_price}</td>
+                  <td>{getPriceDisplay(item.product.selling_price, item.product.unit, item.product.sales_unit, item.product.conversion_factor)}</td>
                   <td>KES {(item.quantity * item.cost_price).toFixed(2)}</td>
                   <td><button className="btn btn-sm btn-danger" onClick={() => removeItem(item.product.id)}><i className="fas fa-times"></i></button></td>
                 </tr>
@@ -737,7 +754,7 @@ export default function CashierPurchases() {
         </div>
       )}
 
-      {/* Add Product Modal */}
+      {/* Add Product Modal with Dual-Unit Support */}
       {showProductModal && modalProduct && (
         <div className="modal-overlay">
           <div className="modal">
@@ -747,16 +764,63 @@ export default function CashierPurchases() {
             </div>
             <div className="modal-body">
               <p><strong>{modalProduct.name}</strong></p>
-              <p>Current Stock: {modalProduct.total_stock ?? 0} {modalProduct.unit}</p>
-              <div className="form-group">
-                <label>Buy Price (per {modalProduct.unit})</label>
-                <input type="number" min="0" step="0.01" value={modalBuyPrice} onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} className="input" />
+              {modalProduct.sku && <p className="text-muted">{modalProduct.sku}</p>}
+              <p>Current Stock: {getStockDisplay(modalProduct.total_stock ?? 0, modalProduct.unit, modalProduct.sales_unit, modalProduct.conversion_factor)}</p>
+
+              {hasDualUnit(modalProduct.sales_unit, modalProduct.conversion_factor) && (
+                <div className="form-section alt-unit-section">
+                  <h4 className="form-section-title">
+                    <i className="fas fa-sync-alt"></i> Order Unit
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className={`toggle-label ${modalUnit === 'base' ? 'active' : ''}`}>
+                      <input
+                        type="radio"
+                        name="orderUnit"
+                        checked={modalUnit === 'base'}
+                        onChange={() => setModalUnit('base')}
+                      />
+                      <span className="toggle-text">{modalProduct.unit} (Base Unit)</span>
+                    </label>
+                    <label className={`toggle-label ${modalUnit === 'sales' ? 'active' : ''}`}>
+                      <input
+                        type="radio"
+                        name="orderUnit"
+                        checked={modalUnit === 'sales'}
+                        onChange={() => setModalUnit('sales')}
+                      />
+                      <span className="toggle-text">
+                        {modalProduct.sales_unit} (1 = {modalProduct.conversion_factor} {modalProduct.unit})
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                <div className="form-group">
+                  <label>Buy Price (per {modalUnit === 'base' ? modalProduct.unit : modalProduct.sales_unit})</label>
+                  <input type="number" min="0" step="0.01" value={modalBuyPrice} onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} className="input" />
+                </div>
+                <div className="form-group">
+                  <label>Sell Price</label>
+                  <p>{getPriceDisplay(modalProduct.selling_price, modalProduct.unit, modalProduct.sales_unit, modalProduct.conversion_factor)}</p>
+                </div>
               </div>
+
               <div className="form-group">
-                <label>Quantity</label>
-                <input type="number" min="1" value={modalQty} onChange={(e) => setModalQty(parseInt(e.target.value) || 1)} className="input" />
+                <label>Quantity (in {modalUnit === 'base' ? modalProduct.unit : modalProduct.sales_unit})</label>
+                <input type="number" min="1" value={modalQty} onChange={(e) => setModalQty(parseFloat(e.target.value) || 1)} className="input" />
               </div>
-              <p className="pos-grand-total">Total: KES {(modalQty * modalBuyPrice).toFixed(2)}</p>
+
+              <p className="pos-grand-total">
+                Total: KES {(
+                  modalQty *
+                  (modalUnit === 'base'
+                    ? modalBuyPrice
+                    : modalBuyPrice * (modalProduct.conversion_factor || 1))
+                ).toFixed(2)}
+              </p>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowProductModal(false)}>Cancel</button>
