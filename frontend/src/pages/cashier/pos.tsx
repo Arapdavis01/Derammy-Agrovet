@@ -5,6 +5,14 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import {
+  getStockDisplay,
+  getPriceDisplay,
+  hasDualUnit,
+  convertToBaseUnits,
+  getPriceForUnit,
+  getAvailableStockForUnit,
+} from '@/utils/productDisplay';
 
 interface Product {
   id: string;
@@ -64,6 +72,7 @@ export default function POS() {
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [quickAddProduct, setQuickAddProduct] = useState<Product | null>(null);
   const [quickQty, setQuickQty] = useState(1);
+  const [quickUnit, setQuickUnit] = useState<'base' | 'sales'>('base');
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -184,24 +193,28 @@ export default function POS() {
     }
     setQuickAddProduct(product);
     setQuickQty(1);
+    setQuickUnit('base');
   };
 
   const closeQuickAdd = () => setQuickAddProduct(null);
 
   const addToCartFromQuickAdd = () => {
     if (!quickAddProduct) return;
-    const maxQty = getProductStock(quickAddProduct);
-    const qty = Math.min(Math.max(1, quickQty), maxQty);
-    if (qty <= 0) {
+
+    // Convert quantity to base units if sales unit selected
+    const baseQty = convertToBaseUnits(quickQty, quickUnit, quickAddProduct.conversion_factor);
+    const maxBaseStock = getProductStock(quickAddProduct);
+
+    if (baseQty <= 0 || baseQty > maxBaseStock) {
       toast.error('Invalid quantity');
       return;
     }
 
     const existing = cart.find((item) => item.product.id === quickAddProduct.id);
     if (existing) {
-      const newTotal = existing.quantity + qty;
-      if (newTotal > maxQty) {
-        toast.error(`Only ${maxQty} available`);
+      const newTotal = existing.quantity + baseQty;
+      if (newTotal > maxBaseStock) {
+        toast.error(`Only ${maxBaseStock} ${quickAddProduct.unit} available`);
         return;
       }
       setCart(
@@ -212,7 +225,7 @@ export default function POS() {
         )
       );
     } else {
-      setCart([...cart, { product: quickAddProduct, quantity: qty }]);
+      setCart([...cart, { product: quickAddProduct, quantity: baseQty }]);
     }
     closeQuickAdd();
   };
@@ -387,7 +400,7 @@ export default function POS() {
       tendered: paymentMethod === 'cash' ? parseFloat(amountReceived) : total,
       change: paymentMethod === 'cash' ? calculateChange() : 0,
       itemsPreview: cart.map(
-        (item) => `${item.product.name} ×${item.quantity} @ KES ${item.product.selling_price}`
+        (item) => `${item.product.name} ×${item.quantity} ${item.product.unit} @ KES ${item.product.selling_price}`
       ),
     };
 
@@ -553,9 +566,11 @@ export default function POS() {
                 <div key={product.id} className="pos-product-card" onClick={() => openQuickAdd(product)}>
                   <div className="pos-product-name">{product.name}</div>
                   {product.sku && <div className="pos-product-sku">SKU: {product.sku}</div>}
-                  <div className="pos-product-price">KES {product.selling_price}/{product.unit}</div>
+                  <div className="pos-product-price">
+                    {getPriceDisplay(product.selling_price, product.unit, product.sales_unit, product.conversion_factor)}
+                  </div>
                   <div className={`pos-product-stock ${stock <= 0 ? 'out' : stock < 5 ? 'low' : 'ok'}`}>
-                    Stock: {stock} {product.unit}
+                    Stock: {getStockDisplay(stock, product.unit, product.sales_unit, product.conversion_factor)}
                   </div>
                 </div>
               );
@@ -607,7 +622,7 @@ export default function POS() {
                 <div key={item.product.id} className="pos-cart-line">
                   <div className="pos-cart-info">
                     <strong>{item.product.name}</strong>
-                    <span>{item.quantity} x KES {item.product.selling_price}/{item.product.unit}</span>
+                    <span>{item.quantity} {item.product.unit} x KES {item.product.selling_price}/{item.product.unit}</span>
                   </div>
                   <div className="pos-cart-controls">
                     <button className="btn btn-sm btn-outline" onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}>-</button>
@@ -775,7 +790,7 @@ export default function POS() {
         </div>
       )}
 
-      {/* Quick Add Modal */}
+      {/* Quick Add Modal with Dual-Unit Support */}
       {quickAddProduct && (
         <div className="modal-overlay">
           <div className="modal">
@@ -785,16 +800,66 @@ export default function POS() {
             </div>
             <div className="modal-body">
               <p><strong>{quickAddProduct.name}</strong></p>
-              <p>Available: {getProductStock(quickAddProduct)} {quickAddProduct.unit}</p>
+              {quickAddProduct.sku && <p className="text-muted">{quickAddProduct.sku}</p>}
+              <p>Available: {getStockDisplay(getProductStock(quickAddProduct), quickAddProduct.unit, quickAddProduct.sales_unit, quickAddProduct.conversion_factor)}</p>
+
+              {hasDualUnit(quickAddProduct.sales_unit, quickAddProduct.conversion_factor) && (
+                <div className="form-section alt-unit-section">
+                  <h4 className="form-section-title">
+                    <i className="fas fa-sync-alt"></i> Sell By
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className={`toggle-label ${quickUnit === 'base' ? 'active' : ''}`}>
+                      <input
+                        type="radio"
+                        name="sellUnit"
+                        checked={quickUnit === 'base'}
+                        onChange={() => setQuickUnit('base')}
+                      />
+                      <span className="toggle-text">
+                        {quickAddProduct.unit} - KES {getPriceForUnit(quickAddProduct.selling_price, 'base')}/{quickAddProduct.unit}
+                      </span>
+                    </label>
+                    <label className={`toggle-label ${quickUnit === 'sales' ? 'active' : ''}`}>
+                      <input
+                        type="radio"
+                        name="sellUnit"
+                        checked={quickUnit === 'sales'}
+                        onChange={() => setQuickUnit('sales')}
+                      />
+                      <span className="toggle-text">
+                        {quickAddProduct.sales_unit} - KES {getPriceForUnit(quickAddProduct.selling_price, 'sales', quickAddProduct.conversion_factor)}/{quickAddProduct.sales_unit}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div className="form-group">
-                <label>Quantity</label>
-                <input type="number" min="1" max={getProductStock(quickAddProduct)} value={quickQty} onChange={(e) => setQuickQty(parseInt(e.target.value) || 0)} onFocus={(e) => e.target.select()} className="input" style={{ textAlign: 'center' }} />
+                <label>Quantity ({quickUnit === 'base' ? quickAddProduct.unit : quickAddProduct.sales_unit})</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={getAvailableStockForUnit(getProductStock(quickAddProduct), quickUnit, quickAddProduct.conversion_factor)}
+                  value={quickQty}
+                  onChange={(e) => setQuickQty(parseFloat(e.target.value) || 1)}
+                  onFocus={(e) => e.target.select()}
+                  className="input"
+                  style={{ textAlign: 'center' }}
+                />
               </div>
-              <p className="pos-grand-total">Total: KES {(quickQty * quickAddProduct.selling_price).toFixed(2)}</p>
+
+              <p className="pos-grand-total">
+                Total: KES {(
+                  quickQty * getPriceForUnit(quickAddProduct.selling_price, quickUnit, quickAddProduct.conversion_factor)
+                ).toFixed(2)}
+              </p>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={closeQuickAdd}>Cancel</button>
-              <button className="btn btn-primary" onClick={addToCartFromQuickAdd}><i className="fas fa-cart-plus"></i> Add to Cart</button>
+              <button className="btn btn-primary" onClick={addToCartFromQuickAdd}>
+                <i className="fas fa-cart-plus"></i> Add to Cart
+              </button>
             </div>
           </div>
         </div>
@@ -913,7 +978,7 @@ export default function POS() {
                           {exchangeResults.map((product) => (
                             <div key={product.id} className="pos-search-item" onClick={() => selectExchangeProduct(product)}>
                               <span>{product.name}</span>
-                              <span>KES {product.selling_price}/{product.unit}</span>
+                              <span>{getPriceDisplay(product.selling_price, product.unit, product.sales_unit, product.conversion_factor)}</span>
                             </div>
                           ))}
                         </div>
