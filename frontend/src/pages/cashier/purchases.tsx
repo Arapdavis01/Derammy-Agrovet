@@ -75,6 +75,7 @@ export default function CashierPurchases() {
   const [creating, setCreating] = useState(false);
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [editingPONumber, setEditingPONumber] = useState('');
+  const [loadingProducts, setLoadingProducts] = useState(false);
 
   // Cashiers
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
@@ -157,6 +158,7 @@ export default function CashierPurchases() {
   const handleProductSearch = async (term: string) => {
     setProductSearch(term);
     if (term.trim().length > 0 && selectedSupplier) {
+      setLoadingProducts(true);
       try {
         const [productsRes, inventoryRes] = await Promise.all([
           api.get('/products', { params: { search: term, limit: 10 } }),
@@ -175,6 +177,8 @@ export default function CashierPurchases() {
         setSearchResults(merged);
       } catch (error) {
         toast.error('Failed to search products');
+      } finally {
+        setLoadingProducts(false);
       }
     } else {
       setSearchResults([]);
@@ -493,10 +497,16 @@ export default function CashierPurchases() {
             value={productSearch}
             onChange={(e) => handleProductSearch(e.target.value)}
             className="input"
-            placeholder={selectedSupplier ? 'Search Products' : 'Select supplier first, then search products...'}
+            placeholder={selectedSupplier ? 'Search Products...' : 'Select supplier first, then search products...'}
             disabled={!selectedSupplier}
           />
-          {searchResults.length > 0 && (
+          {loadingProducts && (
+            <div className="pos-loading-state">
+              <div className="spinner"></div>
+              <p>Loading products...</p>
+            </div>
+          )}
+          {!loadingProducts && searchResults.length > 0 && (
             <div className="pos-search-results">
               {searchResults.map((product) => (
                 <div key={product.id} className="pos-search-item" onClick={() => openAddProductModal(product)}>
@@ -523,8 +533,12 @@ export default function CashierPurchases() {
                   <td>{item.product.name}</td>
                   <td><input type="number" min="0.1" step="0.1" value={item.quantity} onChange={(e) => updateItem(item.product.id, 'quantity', parseFloat(e.target.value) || 0)} className="input" style={{ width: '70px' }} /></td>
                   <td>{item.product.unit}</td>
-                  <td>KES {item.cost_price}</td>
-                  <td>{getPriceDisplay(item.product.selling_price, item.product.unit, item.product.sales_unit, item.product.conversion_factor)}</td>
+                  <td>KES {item.cost_price.toFixed(2)}</td>
+                  <td>
+                    <div className="pos-product-price">
+                      {getPriceDisplay(item.product.selling_price, item.product.unit, item.product.sales_unit, item.product.conversion_factor)}
+                    </div>
+                  </td>
                   <td>KES {(item.quantity * item.cost_price).toFixed(2)}</td>
                   <td><button className="btn btn-sm btn-danger" onClick={() => removeItem(item.product.id)}><i className="fas fa-times"></i></button></td>
                 </tr>
@@ -550,11 +564,11 @@ export default function CashierPurchases() {
         </div>
 
         <div className="pos-totals mt-4">
-          <p>Subtotal (before discounts): KES {subtotal.toFixed(2)}</p>
-          <p>Overall Discount: -KES {computedDiscount.toFixed(2)}</p>
-          <p className="pos-grand-total">TOTAL (Buy): KES {totalBuy.toFixed(2)}</p>
-          <p>Expected Revenue: KES {expectedRevenue.toFixed(2)}</p>
-          <p>Expected Profit: KES {expectedProfit.toFixed(2)}</p>
+          <p>Subtotal (before discounts): <strong>KES {subtotal.toFixed(2)}</strong></p>
+          <p>Overall Discount: <strong>-KES {computedDiscount.toFixed(2)}</strong></p>
+          <p className="pos-grand-total">TOTAL (Buy): <strong>KES {totalBuy.toFixed(2)}</strong></p>
+          <p>Expected Revenue: <strong>KES {expectedRevenue.toFixed(2)}</strong></p>
+          <p>Expected Profit: <strong>KES {expectedProfit.toFixed(2)}</strong></p>
         </div>
 
         <button className="btn btn-primary mt-4" onClick={submitPurchaseOrder} disabled={creating}>
@@ -577,9 +591,14 @@ export default function CashierPurchases() {
           </select>
         </div>
 
-        <p className="mt-2">Total: KES {totalHistory.toFixed(2)} | Suppliers: {groupedBySupplier.length} | POs: {filteredPurchases.length}</p>
+        <p className="mt-2">Total: <strong>KES {totalHistory.toFixed(2)}</strong> | Suppliers: <strong>{groupedBySupplier.length}</strong> | POs: <strong>{filteredPurchases.length}</strong></p>
 
-        {loadingHistory ? <p>Loading...</p> : (
+        {loadingHistory ? (
+          <div className="pos-loading-state">
+            <div className="spinner"></div>
+            <p>Loading history...</p>
+          </div>
+        ) : (
           <div className="mt-4">
             {groupedBySupplier.map((group) => (
               <div key={group.supplier.id} className="card mb-2">
@@ -616,15 +635,15 @@ export default function CashierPurchases() {
                           <td>{order.requested_by_user?.full_name || 'N/A'}</td>
                           <td>{order.received_by_user?.full_name || 'N/A'}</td>
                           {group.orders.some(o => o.edited_by_user) && <td>{order.edited_by_user?.full_name || 'N/A'}</td>}
-                          <td>KES {order.total}</td>
+                          <td>KES {Number(order.total).toFixed(2)}</td>
                           <td><span className={`status ${order.status}`}>{order.status}</span></td>
                           <td>{new Date(order.purchase_date).toLocaleDateString()}</td>
                           <td>
-                            <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order.id)}><i className="fas fa-print"></i></button>
+                            <button className="btn btn-sm btn-outline" onClick={() => openPrintModal(order.id)} title="Print PO"><i className="fas fa-print"></i></button>
                             {order.status === 'pending' && (
                               <>
-                                <button className="btn btn-sm btn-primary" onClick={() => startEdit(order.id)}><i className="fas fa-edit"></i></button>
-                                <button className="btn btn-sm btn-success" onClick={() => openReceiveModal(order.id)}><i className="fas fa-check"></i></button>
+                                <button className="btn btn-sm btn-primary" onClick={() => startEdit(order.id)} title="Edit PO"><i className="fas fa-edit"></i></button>
+                                <button className="btn btn-sm btn-success" onClick={() => openReceiveModal(order.id)} title="Receive Stock"><i className="fas fa-check"></i></button>
                               </>
                             )}
                           </td>
@@ -635,6 +654,9 @@ export default function CashierPurchases() {
                 )}
               </div>
             ))}
+            {groupedBySupplier.length === 0 && (
+              <p className="alert alert-info">No purchase orders found.</p>
+            )}
           </div>
         )}
       </div>
@@ -656,7 +678,9 @@ export default function CashierPurchases() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowReceiveModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmReceivePurchase}>Confirm</button>
+              <button className="btn btn-primary" onClick={confirmReceivePurchase} disabled={creating}>
+                {creating ? 'Processing...' : 'Confirm Receipt'}
+              </button>
             </div>
           </div>
         </div>
@@ -679,7 +703,9 @@ export default function CashierPurchases() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowEditCashierModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmEditPurchase}>Confirm</button>
+              <button className="btn btn-primary" onClick={confirmEditPurchase} disabled={creating}>
+                {creating ? 'Processing...' : 'Confirm Edit'}
+              </button>
             </div>
           </div>
         </div>
@@ -693,7 +719,7 @@ export default function CashierPurchases() {
               <h3 className="modal-title"><i className="fas fa-print"></i> Purchase Order</h3>
               <button className="modal-close" onClick={closePrintModal}><i className="fas fa-times"></i></button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body receipt-body">
               <div className="receipt-company">
                 <h4>DERAMMY AGROVET</h4>
                 <p>P.O BOX 345, NANDI HILLS</p>
@@ -717,13 +743,13 @@ export default function CashierPurchases() {
                       <td>{item.product?.name}</td>
                       <td>{item.quantity}</td>
                       <td>{item.product?.unit}</td>
-                      <td>KES {item.cost_price}</td>
-                      <td>KES {item.total}</td>
+                      <td>KES {Number(item.cost_price).toFixed(2)}</td>
+                      <td>KES {Number(item.total).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <p><strong>TOTAL: KES {printPO.total}</strong></p>
+              <p><strong>TOTAL: KES {Number(printPO.total).toFixed(2)}</strong></p>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={closePrintModal}>Close</button>
@@ -742,9 +768,18 @@ export default function CashierPurchases() {
               <button className="modal-close" onClick={closeSupplierModal}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
-              <div className="form-group"><label>Supplier Name *</label><input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} className="input" /></div>
-              <div className="form-group"><label>Phone</label><input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} className="input" /></div>
-              <div className="form-group"><label>Address</label><input type="text" value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} className="input" /></div>
+              <div className="form-group">
+                <label>Supplier Name *</label>
+                <input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} className="input" />
+              </div>
+              <div className="form-group">
+                <label>Phone</label>
+                <input type="text" value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} className="input" />
+              </div>
+              <div className="form-group">
+                <label>Address</label>
+                <input type="text" value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} className="input" />
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={closeSupplierModal}>Cancel</button>
@@ -780,7 +815,9 @@ export default function CashierPurchases() {
                         checked={modalUnit === 'base'}
                         onChange={() => setModalUnit('base')}
                       />
-                      <span className="toggle-text">{modalProduct.unit} (Base Unit)</span>
+                      <span className="toggle-text">
+                        {modalProduct.unit} (Base Unit)
+                      </span>
                     </label>
                     <label className={`toggle-label ${modalUnit === 'sales' ? 'active' : ''}`}>
                       <input
@@ -800,31 +837,49 @@ export default function CashierPurchases() {
               <div className="grid grid-cols-2 gap-4 mt-2">
                 <div className="form-group">
                   <label>Buy Price (per {modalUnit === 'base' ? modalProduct.unit : modalProduct.sales_unit})</label>
-                  <input type="number" min="0" step="0.01" value={modalBuyPrice} onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} className="input" />
+                  <input 
+                    type="number" 
+                    min="0" 
+                    step="0.01" 
+                    value={modalBuyPrice} 
+                    onChange={(e) => setModalBuyPrice(parseFloat(e.target.value) || 0)} 
+                    className="input"
+                  />
                 </div>
                 <div className="form-group">
                   <label>Sell Price</label>
-                  <p>{getPriceDisplay(modalProduct.selling_price, modalProduct.unit, modalProduct.sales_unit, modalProduct.conversion_factor)}</p>
+                  <div className="pos-product-price">
+                    {getPriceDisplay(modalProduct.selling_price, modalProduct.unit, modalProduct.sales_unit, modalProduct.conversion_factor)}
+                  </div>
                 </div>
               </div>
 
               <div className="form-group">
                 <label>Quantity (in {modalUnit === 'base' ? modalProduct.unit : modalProduct.sales_unit})</label>
-                <input type="number" min="1" value={modalQty} onChange={(e) => setModalQty(parseFloat(e.target.value) || 1)} className="input" />
+                <input 
+                  type="number" 
+                  min="1" 
+                  value={modalQty} 
+                  onChange={(e) => setModalQty(parseFloat(e.target.value) || 1)} 
+                  className="input"
+                  onFocus={(e) => e.target.select()}
+                />
               </div>
 
               <p className="pos-grand-total">
-                Total: KES {(
+                Total: <strong>KES {(
                   modalQty *
                   (modalUnit === 'base'
                     ? modalBuyPrice
                     : modalBuyPrice * (modalProduct.conversion_factor || 1))
-                ).toFixed(2)}
+                ).toFixed(2)}</strong>
               </p>
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowProductModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmAddProduct}>Add to Order</button>
+              <button className="btn btn-primary" onClick={confirmAddProduct}>
+                <i className="fas fa-cart-plus"></i> Add to Order
+              </button>
             </div>
           </div>
         </div>
