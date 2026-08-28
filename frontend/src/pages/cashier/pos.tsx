@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -74,6 +74,8 @@ export default function POS() {
   const [quickQty, setQuickQty] = useState(1);
   const [quickUnit, setQuickUnit] = useState<'base' | 'sales'>('base');
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [refreshingProducts, setRefreshingProducts] = useState(false);
+  const initialLoadDone = useRef(false);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -124,9 +126,14 @@ export default function POS() {
   const [exchangeProduct, setExchangeProduct] = useState<Product | null>(null);
   const [exchangeQty, setExchangeQty] = useState(1);
 
-  const fetchAllProducts = useCallback(async () => {
-    try {
+  const fetchAllProducts = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshingProducts(true);
+    } else {
       setLoadingProducts(true);
+    }
+    
+    try {
       const [productsRes, inventoryRes] = await Promise.all([
         api.get('/products', { params: { limit: 200 } }),
         api.get('/inventory'),
@@ -142,9 +149,17 @@ export default function POS() {
       });
       setStockMap(map);
     } catch (error) {
-      toast.error('Failed to load products');
+      if (!isRefresh) {
+        toast.error('Failed to load products');
+      }
+      // Silently fail for background refreshes
     } finally {
-      setLoadingProducts(false);
+      if (isRefresh) {
+        setRefreshingProducts(false);
+      } else {
+        setLoadingProducts(false);
+        initialLoadDone.current = true;
+      }
     }
   }, []);
 
@@ -153,7 +168,7 @@ export default function POS() {
       const res = await api.get('/cashiers/active');
       setCashiers(res.data || []);
     } catch (error) {
-      toast.error('Failed to load cashiers');
+      // Silently fail for cashiers
     }
   }, []);
 
@@ -166,11 +181,16 @@ export default function POS() {
       router.push('/admin/dashboard');
       return;
     }
-    fetchAllProducts();
+    fetchAllProducts(false);
     fetchCashiers();
   }, [user, fetchAllProducts, fetchCashiers]);
 
-  useRealtimeRefresh(fetchAllProducts, 10000);
+  // Use realtime refresh but only after initial load
+  useRealtimeRefresh(() => {
+    if (initialLoadDone.current) {
+      fetchAllProducts(true);
+    }
+  }, 10000);
 
   useEffect(() => {
     if (!searchTerm.trim()) {
@@ -425,7 +445,7 @@ export default function POS() {
       setAmountReceived('');
       setReference('');
       setDiscount(0);
-      fetchAllProducts();
+      fetchAllProducts(true);
       toast.success('Sale completed successfully');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to complete sale');
@@ -529,7 +549,7 @@ export default function POS() {
       setReturnSale(null);
       setReturnItems([]);
       setExchangeProduct(null);
-      fetchAllProducts();
+      fetchAllProducts(true);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to process return');
     }
