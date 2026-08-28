@@ -6,9 +6,25 @@
  */
 
 /**
+ * IMPORTANT CLARIFICATION:
+ * 
+ * In Derammy Agrovet, the conversion factor represents:
+ * "How many sales units are in ONE base unit?"
+ * 
+ * Example:
+ * - Chick Mash: Base unit = bag (50kg), Sales unit = kg
+ * - Conversion factor = 50 (1 bag = 50 kg)
+ * 
+ * So:
+ * - To convert base → sales: multiply by conversion factor
+ * - To convert sales → base: divide by conversion factor
+ * - Price per sales unit = base price ÷ conversion factor
+ */
+
+/**
  * Get the base unit stock and sales unit stock from total base stock.
  * @param totalBaseStock - Total stock in base units (e.g., 100 bags)
- * @param conversionFactor - How many base units make one sales unit (e.g., 50 kg per bag)
+ * @param conversionFactor - How many sales units are in one base unit (e.g., 50 kg per bag)
  * @returns { baseStock, salesStock, remainderBase }
  */
 export function getDualUnitStock(
@@ -23,8 +39,9 @@ export function getDualUnitStock(
     };
   }
 
-  const salesStock = Math.floor(totalBaseStock / conversionFactor);
-  const remainderBase = totalBaseStock % conversionFactor;
+  // Sales stock = total base stock × conversion factor
+  const salesStock = totalBaseStock * conversionFactor;
+  const remainderBase = 0;
 
   return {
     baseStock: totalBaseStock,
@@ -35,11 +52,11 @@ export function getDualUnitStock(
 
 /**
  * Format stock display string.
- * Example: "100 bags (2,000 kg)" or "193 wheelbarrow (8 tonne + 1 wheelbarrow)"
+ * Example: "20 bags (1000 kg)" or "193 wheelbarrow (4632 kg)"
  * @param totalBaseStock - Total stock in base units
- * @param baseUnit - Base unit name (e.g., "bag", "wheelbarrow")
- * @param salesUnit - Alternative sales unit name (e.g., "kg", "tonne")
- * @param conversionFactor - Conversion factor (base units per sales unit)
+ * @param baseUnit - Base unit name (e.g., "bag")
+ * @param salesUnit - Alternative sales unit name (e.g., "kg")
+ * @param conversionFactor - How many sales units in one base unit
  * @returns Formatted stock string
  */
 export function getStockDisplay(
@@ -54,15 +71,8 @@ export function getStockDisplay(
     return baseDisplay;
   }
 
-  const { salesStock, remainderBase } = getDualUnitStock(totalBaseStock, conversionFactor);
-
-  if (salesStock > 0 && remainderBase > 0) {
-    return `${baseDisplay} (${salesStock} ${salesUnit} + ${remainderBase} ${baseUnit}${remainderBase !== 1 ? 's' : ''})`;
-  } else if (salesStock > 0) {
-    return `${baseDisplay} (${salesStock} ${salesUnit}${salesStock !== 1 ? 's' : ''})`;
-  }
-
-  return baseDisplay;
+  const totalSalesUnits = totalBaseStock * conversionFactor;
+  return `${baseDisplay} (${totalSalesUnits.toLocaleString()} ${salesUnit}${totalSalesUnits !== 1 ? 's' : ''})`;
 }
 
 /**
@@ -71,7 +81,7 @@ export function getStockDisplay(
  * @param basePrice - Price per base unit
  * @param baseUnit - Base unit name
  * @param salesUnit - Alternative sales unit name
- * @param conversionFactor - Conversion factor
+ * @param conversionFactor - How many sales units in one base unit
  * @returns Formatted price string
  */
 export function getPriceDisplay(
@@ -86,15 +96,18 @@ export function getPriceDisplay(
     return basePriceDisplay;
   }
 
-  const salesPrice = basePrice * conversionFactor;
-  return `${basePriceDisplay} | KES ${salesPrice.toLocaleString()}/${salesUnit}`;
+  // ✅ FIXED: Price per sales unit = base price ÷ conversion factor
+  const salesPrice = basePrice / conversionFactor;
+  const salesPriceDisplay = `KES ${salesPrice.toFixed(2).replace(/\.00$/, '')}/${salesUnit}`;
+  
+  return `${basePriceDisplay} | ${salesPriceDisplay}`;
 }
 
 /**
  * Get the price for a given unit.
  * @param basePrice - Price per base unit
  * @param unit - Selected unit ('base' or 'sales')
- * @param conversionFactor - Conversion factor (for sales unit)
+ * @param conversionFactor - How many sales units in one base unit
  * @returns Price per selected unit
  */
 export function getPriceForUnit(
@@ -103,7 +116,8 @@ export function getPriceForUnit(
   conversionFactor?: number | null
 ): number {
   if (unit === 'sales' && conversionFactor && conversionFactor > 0) {
-    return basePrice * conversionFactor;
+    // ✅ FIXED: Divide for smaller unit price
+    return basePrice / conversionFactor;
   }
   return basePrice;
 }
@@ -112,7 +126,7 @@ export function getPriceForUnit(
  * Convert quantity from selected unit to base units.
  * @param quantity - Quantity in selected unit
  * @param unit - Selected unit ('base' or 'sales')
- * @param conversionFactor - Conversion factor (for sales unit)
+ * @param conversionFactor - How many sales units in one base unit
  * @returns Quantity in base units
  */
 export function convertToBaseUnits(
@@ -121,7 +135,8 @@ export function convertToBaseUnits(
   conversionFactor?: number | null
 ): number {
   if (unit === 'sales' && conversionFactor && conversionFactor > 0) {
-    return quantity * conversionFactor;
+    // ✅ FIXED: To convert sales to base, divide
+    return quantity / conversionFactor;
   }
   return quantity;
 }
@@ -130,7 +145,7 @@ export function convertToBaseUnits(
  * Get available stock for a given unit.
  * @param totalBaseStock - Total stock in base units
  * @param unit - Selected unit ('base' or 'sales')
- * @param conversionFactor - Conversion factor
+ * @param conversionFactor - How many sales units in one base unit
  * @returns Available quantity in selected unit
  */
 export function getAvailableStockForUnit(
@@ -139,7 +154,8 @@ export function getAvailableStockForUnit(
   conversionFactor?: number | null
 ): number {
   if (unit === 'sales' && conversionFactor && conversionFactor > 0) {
-    return Math.floor(totalBaseStock / conversionFactor);
+    // ✅ FIXED: Available in sales units = base stock × conversion factor
+    return totalBaseStock * conversionFactor;
   }
   return totalBaseStock;
 }
@@ -155,4 +171,12 @@ export function hasDualUnit(
   conversionFactor?: number | null
 ): boolean {
   return !!(salesUnit && conversionFactor && conversionFactor > 0);
+}
+
+/**
+ * Format a number to remove trailing zeros.
+ * Example: 56.00 → 56, 56.50 → 56.5
+ */
+export function formatNumber(num: number): string {
+  return num.toFixed(2).replace(/\.?0+$/, '');
 }
