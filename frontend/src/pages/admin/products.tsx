@@ -289,7 +289,10 @@ export default function AdminProducts() {
       </div>
 
       {loading ? (
-        <p>Loading...</p>
+        <div className="pos-loading-state">
+          <div className="spinner"></div>
+          <p>Loading products...</p>
+        </div>
       ) : (
         <div className="mt-4">
           {Object.keys(filteredGroups).length === 0 ? (
@@ -355,7 +358,11 @@ export default function AdminProducts() {
                           <td>{product.variant || '-'}</td>
                           <td>{product.category?.name || 'Uncategorized'}</td>
                           <td>KES {product.cost_price.toFixed(2)}</td>
-                          <td>{priceDisplay}</td>
+                          <td>
+                            <div className="pos-product-price">
+                              {priceDisplay}
+                            </div>
+                          </td>
                           <td>{stockDisplay}</td>
                           <td>{product.unit}</td>
                           <td>{product.sales_unit || '-'}</td>
@@ -655,22 +662,33 @@ export default function AdminProducts() {
       {showRestockModal && restockProduct && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>Restock: {restockProduct.name}</h3>
-            <p>Current Stock: {getStockDisplay(stockMap[restockProduct.id] ?? 0, restockProduct.unit, restockProduct.sales_unit, restockProduct.conversion_factor)}</p>
-            <div className="form-group">
-              <label>Quantity to Add ({restockProduct.unit})</label>
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                value={restockQty}
-                onChange={(e) => setRestockQty(e.target.value)}
-                className="input"
-                style={{ textAlign: 'center' }}
-              />
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fas fa-boxes-stacked"></i> Restock: {restockProduct.name}
+              </h3>
+              <button className="modal-close" onClick={() => setShowRestockModal(false)}>
+                <i className="fas fa-times"></i>
+              </button>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-primary" onClick={submitRestock}>Add Stock</button>
+            <div className="modal-body">
+              <p>Current Stock: {getStockDisplay(stockMap[restockProduct.id] ?? 0, restockProduct.unit, restockProduct.sales_unit, restockProduct.conversion_factor)}</p>
+              <div className="form-group">
+                <label>Quantity to Add ({restockProduct.unit})</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(e.target.value)}
+                  className="input"
+                  style={{ textAlign: 'center' }}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={submitRestock}>
+                <i className="fas fa-plus"></i> Add Stock
+              </button>
               <button className="btn btn-outline" onClick={() => setShowRestockModal(false)}>Cancel</button>
             </div>
           </div>
@@ -681,10 +699,24 @@ export default function AdminProducts() {
       {deleteConfirm && (
         <div className="modal-overlay">
           <div className="modal">
-            <h3>Delete Product</h3>
-            <p>Are you sure you want to delete <strong>{deleteConfirm.name}</strong>?</p>
-            <div className="flex gap-2 mt-4">
-              <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="fas fa-trash"></i> Delete Product
+              </h3>
+              <button className="modal-close" onClick={() => setDeleteConfirm(null)}>
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete <strong>{deleteConfirm.name}</strong>?</p>
+              <p className="alert alert-warning mt-2">
+                <i className="fas fa-exclamation-triangle"></i> This action cannot be undone.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-danger" onClick={confirmDelete}>
+                <i className="fas fa-trash"></i> Delete
+              </button>
               <button className="btn btn-outline" onClick={() => setDeleteConfirm(null)}>Cancel</button>
             </div>
           </div>
