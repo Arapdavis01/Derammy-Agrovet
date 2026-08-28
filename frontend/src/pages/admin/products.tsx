@@ -4,6 +4,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
+import { getStockDisplay, getPriceDisplay, hasDualUnit } from '@/utils/productDisplay';
 
 interface Category {
   id: string;
@@ -336,14 +337,26 @@ export default function AdminProducts() {
                           : 'active';
                       const statusText =
                         stock <= 0 ? 'Out' : stock <= product.reorder_level ? 'Low' : 'OK';
+                      const stockDisplay = getStockDisplay(
+                        stock,
+                        product.unit,
+                        product.sales_unit,
+                        product.conversion_factor
+                      );
+                      const priceDisplay = getPriceDisplay(
+                        product.selling_price,
+                        product.unit,
+                        product.sales_unit,
+                        product.conversion_factor
+                      );
                       return (
                         <tr key={product.id}>
                           <td>{product.sku || '-'}</td>
                           <td>{product.variant || '-'}</td>
                           <td>{product.category?.name || 'Uncategorized'}</td>
                           <td>KES {product.cost_price.toFixed(2)}</td>
-                          <td>KES {product.selling_price.toFixed(2)}/{product.unit}</td>
-                          <td>{stock}</td>
+                          <td>{priceDisplay}</td>
+                          <td>{stockDisplay}</td>
                           <td>{product.unit}</td>
                           <td>{product.sales_unit || '-'}</td>
                           <td>{product.conversion_factor || '-'}</td>
@@ -409,7 +422,7 @@ export default function AdminProducts() {
                       value={productForm.name}
                       onChange={(e) => handleProductFormChange('name', e.target.value)}
                       className="input"
-                      placeholder="e.g., supplements"
+                      placeholder="e.g., Chick Mash"
                     />
                   </div>
                   <div className="form-group">
@@ -422,7 +435,7 @@ export default function AdminProducts() {
                       value={productForm.sku}
                       onChange={(e) => handleProductFormChange('sku', e.target.value)}
                       className="input"
-                      placeholder="e.g., kenya seed company"
+                      placeholder="e.g., Pembe"
                     />
                   </div>
                   <div className="form-group">
@@ -479,7 +492,7 @@ export default function AdminProducts() {
                       value={productForm.unit}
                       onChange={(e) => handleProductFormChange('unit', e.target.value)}
                       className="input"
-                      placeholder="e.g., kg, bag, piece"
+                      placeholder="e.g., bag, kg, piece"
                     />
                   </div>
                 </div>
@@ -563,7 +576,7 @@ export default function AdminProducts() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="form-group">
                     <label htmlFor="prodSalesUnit">
-                      <i className="fas fa-ruler"></i> Sales Unit
+                      <i className="fas fa-ruler"></i> Sales Unit Name
                     </label>
                     <input
                       id="prodSalesUnit"
@@ -571,7 +584,7 @@ export default function AdminProducts() {
                       value={productForm.sales_unit}
                       onChange={(e) => handleProductFormChange('sales_unit', e.target.value)}
                       className="input"
-                      placeholder="e.g., tonne, box"
+                      placeholder="e.g., kg, tonne"
                     />
                   </div>
                   <div className="form-group">
@@ -586,12 +599,12 @@ export default function AdminProducts() {
                       value={productForm.conversion_factor}
                       onChange={(e) => handleProductFormChange('conversion_factor', e.target.value)}
                       className="input"
-                      placeholder="e.g., 24"
+                      placeholder="e.g., 50"
                     />
                   </div>
                 </div>
                 <p className="form-hint">
-                  How many base units make one sales unit? Leave empty if not applicable.
+                  How many base units make one sales unit? Example: 1 bag = 50 kg, enter 50.
                 </p>
               </div>
 
@@ -643,7 +656,7 @@ export default function AdminProducts() {
         <div className="modal-overlay">
           <div className="modal">
             <h3>Restock: {restockProduct.name}</h3>
-            <p>Current Stock: {stockMap[restockProduct.id] ?? 0} {restockProduct.unit}</p>
+            <p>Current Stock: {getStockDisplay(stockMap[restockProduct.id] ?? 0, restockProduct.unit, restockProduct.sales_unit, restockProduct.conversion_factor)}</p>
             <div className="form-group">
               <label>Quantity to Add ({restockProduct.unit})</label>
               <input
