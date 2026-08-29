@@ -99,9 +99,11 @@ export default function AdminSales() {
     
     try {
       const today = new Date().toISOString().split('T')[0];
-      let startDate = today;
+      let startDate = '';
       
-      if (dateRange === 'week') {
+      if (dateRange === 'today') {
+        startDate = today;
+      } else if (dateRange === 'week') {
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
         startDate = weekAgo.toISOString().split('T')[0];
@@ -109,34 +111,68 @@ export default function AdminSales() {
         const monthAgo = new Date();
         monthAgo.setMonth(monthAgo.getMonth() - 1);
         startDate = monthAgo.toISOString().split('T')[0];
-      } else if (dateRange === 'all') {
+      } else {
+        // 'all' - don't set start date
         startDate = '';
       }
 
       const params: any = {
         page: pageNum,
         limit,
-        start_date: filters.start_date || startDate || undefined,
-        end_date: filters.end_date || today || undefined,
-        payment_method: filters.payment_method || undefined,
-        payment_status: filters.payment_status || undefined,
-        sale_status: filters.sale_status || undefined,
       };
 
-      // Only add search if provided
-      if (filters.search) {
-        params.search = filters.search;
+      // Only add dates if they are set
+      if (startDate) {
+        params.start_date = startDate;
       }
-      
+      if (today && dateRange !== 'all') {
+        params.end_date = today;
+      }
+      if (filters.start_date) {
+        params.start_date = filters.start_date;
+      }
+      if (filters.end_date) {
+        params.end_date = filters.end_date;
+      }
+      if (filters.payment_method) {
+        params.payment_method = filters.payment_method;
+      }
+      if (filters.payment_status) {
+        params.payment_status = filters.payment_status;
+      }
+      if (filters.sale_status) {
+        params.sale_status = filters.sale_status;
+      }
+
       console.log('Fetching sales with params:', params);
       
       const res = await api.get('/sales', { params });
-      console.log('Sales response:', res.data);
+      console.log('Full sales response:', res.data);
       
-      const salesData = res.data.data || res.data || [];
-      setSales(Array.isArray(salesData) ? salesData : []);
-      setTotalCount(res.data.total || salesData.length || 0);
-      setPage(res.data.page || pageNum);
+      // Handle different response formats
+      let salesData = [];
+      let total = 0;
+      
+      if (Array.isArray(res.data)) {
+        // Response is an array
+        salesData = res.data;
+        total = res.data.length;
+      } else if (res.data && Array.isArray(res.data.data)) {
+        // Response is { data: [...], total: X }
+        salesData = res.data.data;
+        total = res.data.total || res.data.data.length;
+      } else if (res.data && typeof res.data === 'object') {
+        // Response might be an object with sales
+        salesData = res.data.sales || res.data.results || [];
+        total = res.data.total || salesData.length;
+      }
+      
+      console.log('Processed sales data:', salesData);
+      console.log('Total sales count:', total);
+      
+      setSales(salesData);
+      setTotalCount(total);
+      setPage(pageNum);
     } catch (error: any) {
       console.error('Failed to fetch sales:', error);
       console.error('Error response:', error.response?.data);
@@ -168,13 +204,13 @@ export default function AdminSales() {
     fetchSales(1, false);
   }, [user, fetchDashboard, fetchSales]);
 
-  // Auto-refresh every 10 seconds
+  // Auto-refresh every 5 seconds for real-time updates
   useRealtimeRefresh(() => {
     if (initialLoadDone.current) {
       fetchSales(page, true);
       fetchDashboard();
     }
-  }, 10000);
+  }, 5000);
 
   const applyFilters = () => {
     setPage(1);
@@ -526,7 +562,7 @@ export default function AdminSales() {
             <div className="filters">
               <input
                 type="text"
-                placeholder="Search receipt, customer, cashier..."
+                placeholder="Search receipt, customer..."
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                 onKeyPress={(e) => e.key === 'Enter' && applyFilters()}
@@ -605,7 +641,7 @@ export default function AdminSales() {
                             {sale.sale_items && sale.sale_items.length > 0
                               ? sale.sale_items.slice(0, 2).map((item) => (
                                   <div key={item.id} style={{ fontSize: '0.85rem' }}>
-                                    {item.product.name} ×{item.quantity}
+                                    {item.product?.name || 'Product'} ×{item.quantity}
                                   </div>
                                 ))
                               : '—'}
@@ -625,7 +661,7 @@ export default function AdminSales() {
                               color: sale.payment_method === 'cash' ? '#4CAF50' : 
                                     sale.payment_method === 'mpesa' ? '#1976D2' : '#F57C00'
                             }}>
-                              {sale.payment_method.toUpperCase()}
+                              {sale.payment_method?.toUpperCase() || 'N/A'}
                             </span>
                           </td>
                           <td>
@@ -788,7 +824,7 @@ export default function AdminSales() {
                 </div>
                 <div className="card" style={{ background: '#F8F9FA', border: '1px solid #E0E0E0' }}>
                   <p><strong>Cashier:</strong> {getCashierName(selectedSale)}</p>
-                  <p><strong>Payment Method:</strong> {selectedSale.payment_method.toUpperCase()}</p>
+                  <p><strong>Payment Method:</strong> {selectedSale.payment_method?.toUpperCase()}</p>
                   <p><strong>Payment Status:</strong> {selectedSale.payment_status}</p>
                   <p><strong>Sale Status:</strong> {selectedSale.sale_status}</p>
                 </div>
@@ -811,8 +847,8 @@ export default function AdminSales() {
                   <tbody>
                     {selectedSale.sale_items?.map((item) => (
                       <tr key={item.id}>
-                        <td><strong>{item.product.name}</strong></td>
-                        <td>{item.quantity} {item.product.unit}</td>
+                        <td><strong>{item.product?.name || 'Product'}</strong></td>
+                        <td>{item.quantity} {item.product?.unit || ''}</td>
                         <td>{formatCurrency(Number(item.unit_price))}</td>
                         <td>{formatCurrency(Number(item.total))}</td>
                       </tr>
