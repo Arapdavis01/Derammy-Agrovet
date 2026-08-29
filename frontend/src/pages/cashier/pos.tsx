@@ -61,6 +61,16 @@ interface ReturnItemInput {
   condition: string;
 }
 
+interface ReturnReceipt {
+  id: string;
+  return_receipt_no: string;
+  return_date: string;
+  total_refund: number;
+  refund_method: string;
+  return_type: string;
+  items: any[];
+}
+
 export default function POS() {
   const { user } = useAuth();
   const router = useRouter();
@@ -109,6 +119,7 @@ export default function POS() {
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [selectedCashierId, setSelectedCashierId] = useState('');
   const [showCashierModal, setShowCashierModal] = useState(false);
+  const [cashierModalType, setCashierModalType] = useState<'sale' | 'return'>('sale');
 
   // Held carts
   const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
@@ -125,6 +136,9 @@ export default function POS() {
   const [exchangeResults, setExchangeResults] = useState<Product[]>([]);
   const [exchangeProduct, setExchangeProduct] = useState<Product | null>(null);
   const [exchangeQty, setExchangeQty] = useState(1);
+  const [searchingReturn, setSearchingReturn] = useState(false);
+  const [returnReceipt, setReturnReceipt] = useState<ReturnReceipt | null>(null);
+  const [pendingReturnData, setPendingReturnData] = useState<any>(null);
 
   const fetchAllProducts = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -152,7 +166,6 @@ export default function POS() {
       if (!isRefresh) {
         toast.error('Failed to load products');
       }
-      // Silently fail for background refreshes
     } finally {
       if (isRefresh) {
         setRefreshingProducts(false);
@@ -185,7 +198,6 @@ export default function POS() {
     fetchCashiers();
   }, [user, fetchAllProducts, fetchCashiers]);
 
-  // Use realtime refresh but only after initial load
   useRealtimeRefresh(() => {
     if (initialLoadDone.current) {
       fetchAllProducts(true);
@@ -224,8 +236,6 @@ export default function POS() {
 
   const addToCartFromQuickAdd = () => {
     if (!quickAddProduct) return;
-
-    // Convert quantity to base units if sales unit selected
     const baseQty = convertToBaseUnits(quickQty, quickUnit, quickAddProduct.conversion_factor);
     const maxBaseStock = getProductStock(quickAddProduct);
 
@@ -390,6 +400,7 @@ export default function POS() {
       return;
     }
     setSelectedCashierId('');
+    setCashierModalType('sale');
     setShowCashierModal(true);
   };
 
@@ -399,38 +410,43 @@ export default function POS() {
       return;
     }
 
-    const customerName = customer?.name || customerSearch.trim() || 'Walk-in Customer';
+    if (cashierModalType === 'sale') {
+      const customerName = customer?.name || customerSearch.trim() || 'Walk-in Customer';
 
-    const salePayload = {
-      items: cart.map((item) => ({
-        product_id: item.product.id,
-        quantity: item.quantity,
-      })),
-      payment_method: paymentMethod,
-      discount,
-      tax: vat,
-      sale_status: 'completed',
-      amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : undefined,
-      reference: paymentMethod === 'mpesa' ? reference : undefined,
-      customer_id: customer?.id,
-      customer_name: customerName,
-      cashier_id: selectedCashierId,
-    };
+      const salePayload = {
+        items: cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+        })),
+        payment_method: paymentMethod,
+        discount,
+        tax: vat,
+        sale_status: 'completed',
+        amount_received: paymentMethod === 'cash' ? parseFloat(amountReceived) : undefined,
+        reference: paymentMethod === 'mpesa' ? reference : undefined,
+        customer_id: customer?.id,
+        customer_name: customerName,
+        cashier_id: selectedCashierId,
+      };
 
-    const saleSummary = {
-      total,
-      customerName,
-      paymentMethod: paymentMethod.toUpperCase(),
-      tendered: paymentMethod === 'cash' ? parseFloat(amountReceived) : total,
-      change: paymentMethod === 'cash' ? calculateChange() : 0,
-      itemsPreview: cart.map(
-        (item) => `${item.product.name} ×${item.quantity} ${item.product.unit} @ KES ${item.product.selling_price}`
-      ),
-    };
+      const saleSummary = {
+        total,
+        customerName,
+        paymentMethod: paymentMethod.toUpperCase(),
+        tendered: paymentMethod === 'cash' ? parseFloat(amountReceived) : total,
+        change: paymentMethod === 'cash' ? calculateChange() : 0,
+        itemsPreview: cart.map(
+          (item) => `${item.product.name} ×${item.quantity} ${item.product.unit} @ KES ${item.product.selling_price}`
+        ),
+      };
 
-    setPendingSale({ payload: salePayload, summary: saleSummary });
-    setShowCashierModal(false);
-    setShowConfirmModal(true);
+      setPendingSale({ payload: salePayload, summary: saleSummary });
+      setShowCashierModal(false);
+      setShowConfirmModal(true);
+    } else if (cashierModalType === 'return') {
+      // Process return with cashier confirmation
+      processReturnWithCashier(selectedCashierId);
+    }
   };
 
   const confirmSale = async () => {
@@ -462,6 +478,7 @@ export default function POS() {
       toast.error('Enter receipt number');
       return;
     }
+    setSearchingReturn(true);
     try {
       const res = await api.get('/sales', { params: { limit: 200 } });
       const found = res.data.data.find((s: any) => s.invoice_no === returnInvoice.trim());
@@ -469,8 +486,36 @@ export default function POS() {
         toast.error('Receipt not found');
         return;
       }
+      
+      // Check if sale is fully returned
+      if (found.return_status === 'full') {
+        toast.error('This receipt has been fully returned');
+        return;
+      }
+      
+      // Check return window (5 working days)
+      const saleDate = new Date(found.sale_date);
+      const now = new Date();
+      const daysDiff = Math.floor((now.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysDiff > 5) {
+        toast.error('Return window has expired (5 working days)');
+        return;
+      }
+      
       const detailRes = await api.get(`/sales/${found.id}`);
-      setReturnSale(detailRes.data);
+      const saleDetail = detailRes.data;
+      
+      // Filter out already returned items
+      const availableItems = saleDetail.sale_items.filter(
+        (item: any) => item.return_status === 'not_returned' || !item.return_status
+      );
+      
+      if (availableItems.length === 0) {
+        toast.error('All items in this receipt have been returned');
+        return;
+      }
+      
+      setReturnSale({ ...saleDetail, sale_items: availableItems });
       setReturnItems([]);
       setReturnType('return');
       setExchangeProduct(null);
@@ -478,6 +523,8 @@ export default function POS() {
       setExchangeQty(1);
     } catch (error) {
       toast.error('Failed to search receipt');
+    } finally {
+      setSearchingReturn(false);
     }
   };
 
@@ -516,12 +563,19 @@ export default function POS() {
     setExchangeResults([]);
   };
 
-  const submitReturn = async () => {
+  const submitReturn = () => {
     if (!returnSale) return;
     const validItems = returnItems.filter((item) => item.quantity > 0);
     if (validItems.length === 0) {
       toast.error('Select at least one item with quantity');
       return;
+    }
+
+    if (returnType === 'exchange') {
+      if (!exchangeProduct) {
+        toast.error('Select exchange product');
+        return;
+      }
     }
 
     const payload: any = {
@@ -533,25 +587,40 @@ export default function POS() {
     };
 
     if (returnType === 'exchange') {
-      if (!exchangeProduct) {
-        toast.error('Select exchange product');
-        return;
-      }
       payload.exchange_product_id = exchangeProduct.id;
       payload.exchange_quantity = exchangeQty;
     }
 
+    setPendingReturnData(payload);
+    setSelectedCashierId('');
+    setCashierModalType('return');
+    setShowCashierModal(true);
+  };
+
+  const processReturnWithCashier = async (cashierId: string) => {
+    if (!pendingReturnData) return;
+    setLoading(true);
     try {
-      await api.post('/returns', payload);
-      toast.success('Return/Exchange processed successfully');
+      const res = await api.post('/returns', {
+        ...pendingReturnData,
+        cashier_id: cashierId,
+      });
+      
+      setReturnReceipt(res.data);
+      setShowCashierModal(false);
       setShowReturnModal(false);
       setReturnInvoice('');
       setReturnSale(null);
       setReturnItems([]);
       setExchangeProduct(null);
+      setPendingReturnData(null);
       fetchAllProducts(true);
+      toast.success('Return/Exchange processed successfully');
     } catch (error: any) {
+      setShowCashierModal(false);
       toast.error(error.response?.data?.error || 'Failed to process return');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -739,11 +808,13 @@ export default function POS() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h3 className="modal-title"><i className="fas fa-user-check"></i> Select Cashier</h3>
+              <h3 className="modal-title">
+                <i className="fas fa-user-check"></i> Select Cashier
+              </h3>
               <button className="modal-close" onClick={() => setShowCashierModal(false)}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
-              <p>Who is making this sale?</p>
+              <p>{cashierModalType === 'sale' ? 'Who is making this sale?' : 'Who is processing this return?'}</p>
               <select value={selectedCashierId} onChange={(e) => setSelectedCashierId(e.target.value)} className="input">
                 <option value="">Select your name...</option>
                 {cashiers.map((cashier) => (
@@ -753,7 +824,9 @@ export default function POS() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowCashierModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={confirmCashierAndProceed}>Continue</button>
+              <button className="btn btn-primary" onClick={confirmCashierAndProceed} disabled={loading}>
+                {loading ? 'Processing...' : 'Continue'}
+              </button>
             </div>
           </div>
         </div>
@@ -970,25 +1043,47 @@ export default function POS() {
         </div>
       )}
 
-      {/* Return/Exchange Modal */}
+      {/* Return/Exchange Modal - Updated with Return Status Tracking */}
       {showReturnModal && (
         <div className="modal-overlay">
           <div className="modal modal-large">
             <div className="modal-header">
               <h3 className="modal-title"><i className="fas fa-rotate-left"></i> Return / Exchange</h3>
-              <button className="modal-close" onClick={() => setShowReturnModal(false)}><i className="fas fa-times"></i></button>
+              <button className="modal-close" onClick={() => {
+                setShowReturnModal(false);
+                setReturnSale(null);
+                setReturnItems([]);
+              }}><i className="fas fa-times"></i></button>
             </div>
             <div className="modal-body">
               <div className="flex gap-2 mb-4">
-                <input type="text" placeholder="Enter receipt number" value={returnInvoice} onChange={(e) => setReturnInvoice(e.target.value)} className="input" />
-                <button className="btn btn-outline" onClick={searchReturnSale}>Search</button>
+                <input 
+                  type="text" 
+                  placeholder="Enter receipt number" 
+                  value={returnInvoice} 
+                  onChange={(e) => setReturnInvoice(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && searchReturnSale()}
+                  className="input"
+                />
+                <button className="btn btn-outline" onClick={searchReturnSale} disabled={searchingReturn}>
+                  {searchingReturn ? 'Searching...' : 'Search'}
+                </button>
               </div>
+              
               {returnSale && (
                 <>
-                  <p><strong>Invoice:</strong> {returnSale.invoice_no}</p>
-                  <p><strong>Customer:</strong> {returnSale.customer?.name || returnSale.customer_name || 'Walk-in'}</p>
-                  <p><strong>Date:</strong> {new Date(returnSale.sale_date).toLocaleDateString()}</p>
-                  <p><strong>Total:</strong> KES {returnSale.total}</p>
+                  <div className="card mb-3" style={{ background: '#F8F9FA', border: '1px solid #E0E0E0' }}>
+                    <p><strong>Invoice:</strong> {returnSale.invoice_no}</p>
+                    <p><strong>Customer:</strong> {returnSale.customer?.name || returnSale.customer_name || 'Walk-in'}</p>
+                    <p><strong>Date:</strong> {new Date(returnSale.sale_date).toLocaleDateString()}</p>
+                    <p><strong>Total:</strong> KES {returnSale.total}</p>
+                    <p>
+                      <strong>Return Status:</strong>{' '}
+                      <span className={`status ${returnSale.return_status || 'none'}`}>
+                        {returnSale.return_status || 'none'}
+                      </span>
+                    </p>
+                  </div>
 
                   <div className="form-group">
                     <label>Return Type</label>
@@ -999,20 +1094,73 @@ export default function POS() {
                   </div>
 
                   <table className="table mt-4">
-                    <thead><tr><th>Product</th><th>Original Qty</th><th>Return Qty</th><th>Reason</th><th>Condition</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Original Qty</th>
+                        <th>Return Status</th>
+                        <th>Return Qty</th>
+                        <th>Reason (Optional)</th>
+                        <th>Condition</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {returnSale.sale_items.map((item: any) => (
-                        <tr key={item.id}>
+                        <tr key={item.id} style={{ opacity: item.return_status === 'returned' || item.return_status === 'exchanged' ? 0.5 : 1 }}>
                           <td>{item.product.name}</td>
                           <td>{item.quantity} {item.product.unit}</td>
-                          <td><input type="number" min="0" max={item.quantity} step="0.1" className="input" style={{ width: '80px' }} onChange={(e) => handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></td>
-                          <td><input type="text" className="input" placeholder="Reason" onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)} /></td>
                           <td>
-                            <select className="input" onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)} defaultValue="resellable">
-                              <option value="resellable">Resellable</option>
-                              <option value="damaged">Damaged</option>
-                              <option value="expired">Expired</option>
-                            </select>
+                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
+                              <span className="badge" style={{ background: '#FFEBEE', color: '#D32F2F' }}>
+                                {item.return_status.toUpperCase()}
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ background: '#E8F5E9', color: '#4CAF50' }}>
+                                AVAILABLE
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
+                              <span className="text-muted">Already returned</span>
+                            ) : (
+                              <input 
+                                type="number" 
+                                min="0" 
+                                max={item.quantity} 
+                                step="0.1" 
+                                className="input" 
+                                style={{ width: '80px' }} 
+                                onChange={(e) => handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} 
+                              />
+                            )}
+                          </td>
+                          <td>
+                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
+                              <span className="text-muted">-</span>
+                            ) : (
+                              <input 
+                                type="text" 
+                                className="input" 
+                                placeholder="Optional" 
+                                onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)} 
+                              />
+                            )}
+                          </td>
+                          <td>
+                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
+                              <span className="text-muted">-</span>
+                            ) : (
+                              <select 
+                                className="input" 
+                                onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)} 
+                                defaultValue="resellable"
+                              >
+                                <option value="resellable">Resellable</option>
+                                <option value="damaged">Damaged</option>
+                                <option value="expired">Expired</option>
+                              </select>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1052,12 +1200,66 @@ export default function POS() {
                     </select>
                   </div>
 
-                  <button className="btn btn-primary mt-4" onClick={submitReturn}>Process Return/Exchange</button>
+                  <button className="btn btn-primary mt-4" onClick={submitReturn} disabled={loading}>
+                    {loading ? 'Processing...' : 'Process Return/Exchange'}
+                  </button>
                 </>
               )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setShowReturnModal(false)}>Close</button>
+              <button className="btn btn-outline" onClick={() => {
+                setShowReturnModal(false);
+                setReturnSale(null);
+                setReturnItems([]);
+              }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Receipt Modal */}
+      {returnReceipt && (
+        <div className="modal-overlay">
+          <div className="modal modal-large">
+            <div className="modal-header">
+              <h3 className="modal-title"><i className="fas fa-receipt"></i> Return Receipt</h3>
+              <button className="modal-close" onClick={() => setReturnReceipt(null)}><i className="fas fa-times"></i></button>
+            </div>
+            <div className="modal-body receipt-body">
+              <div className="receipt-company">
+                <h4>DERAMMY AGROVET</h4>
+                <p>P.O BOX 345, NANDI HILLS</p>
+                <p>Tel: 0717149902, 0724985188</p>
+                <p>Quality Farm Inputs & Veterinary Supplies</p>
+              </div>
+              <hr />
+              <p><strong>RETURN/EXCHANGE RECEIPT</strong></p>
+              <p><strong>{returnReceipt.return_receipt_no}</strong></p>
+              <p>Date: {new Date(returnReceipt.return_date).toLocaleDateString()}</p>
+              <p>Time: {new Date(returnReceipt.return_date).toLocaleTimeString()}</p>
+              <p>Type: {returnReceipt.return_type.toUpperCase()}</p>
+              <p>Refund Method: {returnReceipt.refund_method.toUpperCase()}</p>
+              <p><strong>Total Refund: KES {returnReceipt.total_refund}</strong></p>
+              {returnReceipt.items && returnReceipt.items.length > 0 && (
+                <table className="table mt-2">
+                  <thead><tr><th>Item</th><th>Qty</th><th>Condition</th></tr></thead>
+                  <tbody>
+                    {returnReceipt.items.map((item: any) => (
+                      <tr key={item.id}>
+                        <td>{item.product?.name || item.sale_item?.product?.name || 'Product'}</td>
+                        <td>{item.quantity}</td>
+                        <td>{item.condition || 'resellable'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p>Thank you for choosing</p>
+              <p><strong>DERAMMY AGROVET</strong></p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setReturnReceipt(null)}>Close</button>
+              <button className="btn btn-primary" onClick={() => window.print()}><i className="fas fa-print"></i> Print</button>
             </div>
           </div>
         </div>
