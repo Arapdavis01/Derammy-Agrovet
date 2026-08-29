@@ -444,7 +444,6 @@ export default function POS() {
       setShowCashierModal(false);
       setShowConfirmModal(true);
     } else if (cashierModalType === 'return') {
-      // Process return with cashier confirmation
       processReturnWithCashier(selectedCashierId);
     }
   };
@@ -487,13 +486,11 @@ export default function POS() {
         return;
       }
       
-      // Check if sale is fully returned
       if (found.return_status === 'full') {
         toast.error('This receipt has been fully returned');
         return;
       }
       
-      // Check return window (5 working days)
       const saleDate = new Date(found.sale_date);
       const now = new Date();
       const daysDiff = Math.floor((now.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -505,7 +502,6 @@ export default function POS() {
       const detailRes = await api.get(`/sales/${found.id}`);
       const saleDetail = detailRes.data;
       
-      // Filter out already returned items
       const availableItems = saleDetail.sale_items.filter(
         (item: any) => item.return_status === 'not_returned' || !item.return_status
       );
@@ -571,13 +567,6 @@ export default function POS() {
       return;
     }
 
-    if (returnType === 'exchange') {
-      if (!exchangeProduct) {
-        toast.error('Select exchange product');
-        return;
-      }
-    }
-
     const payload: any = {
       sale_id: returnSale.id,
       items: validItems,
@@ -587,6 +576,10 @@ export default function POS() {
     };
 
     if (returnType === 'exchange') {
+      if (!exchangeProduct) {
+        toast.error('Select exchange product');
+        return;
+      }
       payload.exchange_product_id = exchangeProduct.id;
       payload.exchange_quantity = exchangeQty;
     }
@@ -913,7 +906,7 @@ export default function POS() {
         </div>
       )}
 
-      {/* Quick Add Modal with Dual-Unit Support */}
+      {/* Quick Add Modal */}
       {quickAddProduct && (
         <div className="modal-overlay">
           <div className="modal">
@@ -1043,7 +1036,7 @@ export default function POS() {
         </div>
       )}
 
-      {/* Return/Exchange Modal - Updated with Return Status Tracking */}
+      {/* Return/Exchange Modal */}
       {showReturnModal && (
         <div className="modal-overlay">
           <div className="modal modal-large">
@@ -1106,61 +1099,43 @@ export default function POS() {
                     </thead>
                     <tbody>
                       {returnSale.sale_items.map((item: any) => (
-                        <tr key={item.id} style={{ opacity: item.return_status === 'returned' || item.return_status === 'exchanged' ? 0.5 : 1 }}>
+                        <tr key={item.id}>
                           <td>{item.product.name}</td>
                           <td>{item.quantity} {item.product.unit}</td>
                           <td>
-                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
-                              <span className="badge" style={{ background: '#FFEBEE', color: '#D32F2F' }}>
-                                {item.return_status.toUpperCase()}
-                              </span>
-                            ) : (
-                              <span className="badge" style={{ background: '#E8F5E9', color: '#4CAF50' }}>
-                                AVAILABLE
-                              </span>
-                            )}
+                            <span className="badge" style={{ background: '#E8F5E9', color: '#4CAF50' }}>
+                              AVAILABLE
+                            </span>
                           </td>
                           <td>
-                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
-                              <span className="text-muted">Already returned</span>
-                            ) : (
-                              <input 
-                                type="number" 
-                                min="0" 
-                                max={item.quantity} 
-                                step="0.1" 
-                                className="input" 
-                                style={{ width: '80px' }} 
-                                onChange={(e) => handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} 
-                              />
-                            )}
+                            <input 
+                              type="number" 
+                              min="0" 
+                              max={item.quantity} 
+                              step="0.1" 
+                              className="input" 
+                              style={{ width: '80px' }} 
+                              onChange={(e) => handleReturnItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} 
+                            />
                           </td>
                           <td>
-                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
-                              <span className="text-muted">-</span>
-                            ) : (
-                              <input 
-                                type="text" 
-                                className="input" 
-                                placeholder="Optional" 
-                                onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)} 
-                              />
-                            )}
+                            <input 
+                              type="text" 
+                              className="input" 
+                              placeholder="Optional" 
+                              onChange={(e) => handleReturnItemChange(item.id, 'reason', e.target.value)} 
+                            />
                           </td>
                           <td>
-                            {item.return_status === 'returned' || item.return_status === 'exchanged' ? (
-                              <span className="text-muted">-</span>
-                            ) : (
-                              <select 
-                                className="input" 
-                                onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)} 
-                                defaultValue="resellable"
-                              >
-                                <option value="resellable">Resellable</option>
-                                <option value="damaged">Damaged</option>
-                                <option value="expired">Expired</option>
-                              </select>
-                            )}
+                            <select 
+                              className="input" 
+                              onChange={(e) => handleReturnItemChange(item.id, 'condition', e.target.value)} 
+                              defaultValue="resellable"
+                            >
+                              <option value="resellable">Resellable</option>
+                              <option value="damaged">Damaged</option>
+                              <option value="expired">Expired</option>
+                            </select>
                           </td>
                         </tr>
                       ))}
