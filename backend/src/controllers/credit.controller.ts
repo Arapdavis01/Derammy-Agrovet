@@ -30,30 +30,33 @@ export const getCustomerLedger = async (req: Request, res: Response) => {
 
   if (customerError || !customer) throw new AppError('Customer not found', 404);
 
-  // Get credit sales (where payment_status = 'credit' or method includes credit)
+  // Get credit sales
   const { data: sales, error: salesError } = await supabaseAdmin
     .from('sales')
     .select(`
-      id, invoice_no, sale_date, total, amount_paid, payment_status, payment_method,
-      payments(amount, payment_method, reference, payment_date)
+      id, invoice_no, sale_date, total, amount_paid, payment_status, payment_method
     `)
     .eq('customer_id', id)
-    .or('payment_status.eq.credit,payment_method.eq.mixed')
     .order('sale_date', { ascending: false });
 
-  if (salesError) throw new AppError('Failed to fetch credit sales', 500);
+  if (salesError) {
+    console.error('Failed to fetch credit sales:', salesError);
+    throw new AppError('Failed to fetch credit sales', 500);
+  }
 
-  // Get payments received on credit account (not linked to a specific sale)
+  // Get payments
   const { data: payments, error: paymentsError } = await supabaseAdmin
     .from('payments')
     .select('*')
     .eq('customer_id', id)
-    .is('sale_id', null)
     .order('payment_date', { ascending: false });
 
-  if (paymentsError) throw new AppError('Failed to fetch payments', 500);
+  if (paymentsError) {
+    console.error('Failed to fetch payments:', paymentsError);
+    throw new AppError('Failed to fetch payments', 500);
+  }
 
-  // Get returns that affected credit (credit note)
+  // Get returns
   const { data: returns, error: returnsError } = await supabaseAdmin
     .from('returns')
     .select('id, return_date, total_refund, refund_method')
@@ -61,13 +64,16 @@ export const getCustomerLedger = async (req: Request, res: Response) => {
     .eq('refund_method', 'credit_note')
     .order('return_date', { ascending: false });
 
-  if (returnsError) throw new AppError('Failed to fetch returns', 500);
+  if (returnsError) {
+    console.error('Failed to fetch returns:', returnsError);
+    throw new AppError('Failed to fetch returns', 500);
+  }
 
   res.json({
     customer,
-    sales,
-    payments,
-    returns,
+    sales: sales || [],
+    payments: payments || [],
+    returns: returns || [],
   });
 };
 
@@ -84,16 +90,15 @@ export const recordPayment = async (req: Request, res: Response) => {
     notes
   } = req.body;
   
-  const userId = (req as any).user.id;
+  // Use cashier_id from request body, or fall back to received_by
+  const recordedByCashierId = cashier_id || received_by || null;
 
   console.log('Recording payment with data:', {
     customer_id,
     amount,
     payment_method,
     reference,
-    cashier_id,
-    received_by,
-    userId
+    cashier_id: recordedByCashierId,
   });
 
   if (!customer_id || !amount || amount <= 0) {
@@ -125,6 +130,30 @@ export const recordPayment = async (req: Request, res: Response) => {
   console.log('Payment amount:', paymentAmount);
   console.log('New balance:', newBalance);
 
+  // Prepare payment record with correct column names
+  const paymentRecord: any = {
+    customer_id,
+    amount: paymentAmount,
+    payment_method,
+    sale_id: null, // indicate general payment
+  };
+
+  // Add cashier_id if provided
+  if (recordedByCashierId) {
+    paymentRecord.cashier_id = recordedByCashierId;
+  }
+
+  // Add optional fields
+  if (reference) paymentRecord.reference = reference;
+  if (payment_date) {
+    paymentRecord.payment_date = payment_date;
+  } else {
+    paymentRecord.payment_date = new Date().toISOString();
+  }
+  if (notes) paymentRecord.notes = notes;
+
+  console.log('Attempting to insert payment record:', paymentRecord);
+
   // First, update customer balance
   const { error: updateError } = await supabaseAdmin
     .from('customers')
@@ -136,25 +165,7 @@ export const recordPayment = async (req: Request, res: Response) => {
     throw new AppError('Failed to update customer balance', 500);
   }
 
-  // Prepare payment record - try with all fields first
-  const paymentRecord: any = {
-    customer_id,
-    amount: paymentAmount,
-    payment_method,
-    user_id: userId,
-    sale_id: null,
-  };
-
-  // Only add optional fields if they have values
-  if (reference) paymentRecord.reference = reference;
-  if (cashier_id) paymentRecord.cashier_id = cashier_id;
-  if (received_by) paymentRecord.received_by = received_by;
-  if (payment_date) paymentRecord.payment_date = payment_date;
-  if (notes) paymentRecord.notes = notes;
-
-  console.log('Attempting to insert payment record:', paymentRecord);
-
-  // Try to insert payment
+  // Insert payment record
   const { data: payment, error: paymentError } = await supabaseAdmin
     .from('payments')
     .insert(paymentRecord)
@@ -171,15 +182,20 @@ export const recordPayment = async (req: Request, res: Response) => {
       .update({ credit_balance: currentBalance })
       .eq('id', customer_id);
     
-    // Try with minimal fields
+    // Try with minimal fields (only required ones)
     console.log('Attempting minimal insert...');
-    const minimalRecord = {
+    const minimalRecord: any = {
       customer_id,
       amount: paymentAmount,
       payment_method,
-      user_id: userId,
       sale_id: null,
+      payment_date: new Date().toISOString(),
     };
+    
+    // Add cashier_id if available
+    if (recordedByCashierId) {
+      minimalRecord.cashier_id = recordedByCashierId;
+    }
     
     const { data: minimalPayment, error: minimalError } = await supabaseAdmin
       .from('payments')
@@ -197,7 +213,7 @@ export const recordPayment = async (req: Request, res: Response) => {
         .update({ credit_balance: currentBalance })
         .eq('id', customer_id);
       
-      throw new AppError('Failed to record payment. Database schema issue. Please run migration.', 500);
+      throw new AppError('Failed to record payment. Please check database schema.', 500);
     }
     
     // Update customer balance again (since we rolled back)
@@ -215,7 +231,7 @@ export const recordPayment = async (req: Request, res: Response) => {
     res.status(201).json({ 
       payment: minimalPayment, 
       new_balance: newBalance,
-      warning: 'Payment recorded with minimal fields due to schema mismatch'
+      warning: 'Payment recorded with minimal fields'
     });
     return;
   }
@@ -257,7 +273,7 @@ export const getCreditAging = async (req: Request, res: Response) => {
       .eq('payment_status', 'credit')
       .order('sale_date', { ascending: true })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     const ageDays = oldestSale
       ? Math.floor((Date.now() - new Date(oldestSale.sale_date).getTime()) / (1000 * 60 * 60 * 24))
@@ -284,8 +300,8 @@ export const getCreditAging = async (req: Request, res: Response) => {
 
 // List recent payments (admin/manager)
 export const listPayments = async (req: Request, res: Response) => {
-  const { limit = 10, offset = 0 } = req.query as any;
-  const limitNum = parseInt(limit) || 10;
+  const { limit = 50, offset = 0 } = req.query as any;
+  const limitNum = parseInt(limit) || 50;
   const offsetNum = parseInt(offset) || 0;
 
   const { data, error } = await supabaseAdmin
@@ -297,7 +313,7 @@ export const listPayments = async (req: Request, res: Response) => {
       reference,
       payment_date,
       customer:customers(id, name),
-      user:users(id, full_name)
+      cashier:users!payments_cashier_id_fkey(id, full_name)
     `)
     .order('payment_date', { ascending: false })
     .range(offsetNum, offsetNum + limitNum - 1);
@@ -307,5 +323,5 @@ export const listPayments = async (req: Request, res: Response) => {
     throw new AppError('Failed to fetch payments', 500);
   }
   
-  res.json({ data, total: data.length });
+  res.json({ data: data || [], total: data?.length || 0 });
 };
