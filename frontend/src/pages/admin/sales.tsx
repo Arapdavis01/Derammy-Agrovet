@@ -14,9 +14,11 @@ interface Sale {
   tax: number;
   discount: number;
   amount_paid: number;
+  change_due: number;
   payment_method: string;
   payment_status: string;
   sale_status: string;
+  customer_name?: string;
   customer: { id: string; name: string; phone?: string } | null;
   user: { id: string; full_name: string } | null;
   cashier?: { id: string; full_name: string } | null;
@@ -48,14 +50,12 @@ interface DashboardStats {
   today_sales_count: number;
   total_transactions: number;
   cashier_performance?: any[];
-  payment_breakdown?: any;
 }
 
 export default function AdminSales() {
   const { user } = useAuth();
   const router = useRouter();
   
-  // Data states
   const [sales, setSales] = useState<Sale[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -65,14 +65,12 @@ export default function AdminSales() {
   const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
   const [voiding, setVoiding] = useState(false);
   
-  // UI states
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'analytics'>('overview');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [voidReason, setVoidReason] = useState('');
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('today');
   
-  // Filters
   const [filters, setFilters] = useState({
     search: '',
     start_date: '',
@@ -206,24 +204,33 @@ export default function AdminSales() {
     }
   };
 
+  const getCashierName = (sale: Sale): string => {
+    // Try to get cashier name from cashier object first
+    if (sale.cashier?.full_name) {
+      return sale.cashier.full_name;
+    }
+    // Fall back to user name if available
+    if (sale.user?.full_name) {
+      return sale.user.full_name;
+    }
+    return 'Unknown';
+  };
+
   const exportCSV = () => {
     if (sales.length === 0) {
       toast.error('No data to export');
       return;
     }
-    const headers = ['Receipt No', 'Date', 'Customer', 'Items', 'Subtotal', 'Tax', 'Discount', 'Total', 'Payment Method', 'Payment Status', 'Cashier'];
+    const headers = ['Receipt No', 'Date', 'Customer', 'Items', 'Total', 'Payment Method', 'Payment Status', 'Cashier'];
     const rows = sales.map((sale) => [
       sale.invoice_no,
       new Date(sale.sale_date).toLocaleDateString(),
-      sale.customer?.name || 'Walk-in Customer',
+      sale.customer?.name || sale.customer_name || 'Walk-in Customer',
       sale.sale_items ? sale.sale_items.map((item) => `${item.product.name} ×${item.quantity}`).join(' | ') : '',
-      sale.subtotal || sale.total,
-      sale.tax || 0,
-      sale.discount || 0,
       sale.total,
       sale.payment_method.toUpperCase(),
       sale.payment_status,
-      sale.user?.full_name || sale.cashier?.full_name || 'Unknown',
+      getCashierName(sale),
     ]);
     const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -260,9 +267,9 @@ export default function AdminSales() {
           </div>
           <p><strong>Receipt:</strong> ${sale.invoice_no}</p>
           <p><strong>Date:</strong> ${new Date(sale.sale_date).toLocaleString()}</p>
-          <p><strong>Customer:</strong> ${sale.customer?.name || 'Walk-in Customer'}</p>
+          <p><strong>Customer:</strong> ${sale.customer?.name || sale.customer_name || 'Walk-in Customer'}</p>
           <p><strong>Payment:</strong> ${sale.payment_method.toUpperCase()}</p>
-          <p><strong>Cashier:</strong> ${sale.user?.full_name || 'N/A'}</p>
+          <p><strong>Cashier:</strong> ${getCashierName(sale)}</p>
           <table>
             <thead>
               <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
@@ -288,14 +295,12 @@ export default function AdminSales() {
     printWindow.print();
   };
 
-  // Computed values
   const totalRevenue = dashboard?.total_sales || 0;
   const todayRevenue = dashboard?.today_sales || 0;
   const todayTransactions = dashboard?.today_sales_count || 0;
   const totalTransactions = dashboard?.total_transactions || 0;
   const avgTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
 
-  // Sales analytics
   const paymentBreakdown = useMemo(() => {
     const breakdown: Record<string, { count: number; total: number }> = {};
     sales.forEach((sale) => {
@@ -465,7 +470,10 @@ export default function AdminSales() {
                 <div>
                   <strong>{sale.invoice_no}</strong>
                   <p className="text-muted" style={{ fontSize: '0.9rem' }}>
-                    {sale.customer?.name || 'Walk-in Customer'} | {formatDateTime(sale.sale_date)}
+                    {sale.customer?.name || sale.customer_name || 'Walk-in Customer'} | {formatDateTime(sale.sale_date)}
+                  </p>
+                  <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+                    Cashier: {getCashierName(sale)}
                   </p>
                 </div>
                 <div className="text-right">
@@ -519,16 +527,6 @@ export default function AdminSales() {
                 <option value="credit">Credit</option>
                 <option value="mixed">Mixed</option>
               </select>
-              <select
-                value={filters.payment_status}
-                onChange={(e) => setFilters({ ...filters, payment_status: e.target.value })}
-                className="input"
-              >
-                <option value="">All Status</option>
-                <option value="paid">Paid</option>
-                <option value="credit">Credit</option>
-                <option value="partial">Partial</option>
-              </select>
               <button className="btn btn-primary" onClick={applyFilters}>
                 <i className="fas fa-search" style={{ marginRight: '4px' }}></i> Apply
               </button>
@@ -556,7 +554,6 @@ export default function AdminSales() {
                         <th>Items</th>
                         <th>Total</th>
                         <th>Payment</th>
-                        <th>Status</th>
                         <th>Cashier</th>
                         <th>Actions</th>
                       </tr>
@@ -572,13 +569,7 @@ export default function AdminSales() {
                             </span>
                           </td>
                           <td>
-                            {sale.customer?.name || 'Walk-in Customer'}
-                            {sale.customer?.phone && (
-                              <br />
-                              <span className="text-muted" style={{ fontSize: '0.8rem' }}>
-                                {sale.customer.phone}
-                              </span>
-                            )}
+                            {sale.customer?.name || sale.customer_name || 'Walk-in Customer'}
                           </td>
                           <td>
                             {sale.sale_items && sale.sale_items.length > 0
@@ -608,11 +599,8 @@ export default function AdminSales() {
                             </span>
                           </td>
                           <td>
-                            <span className={`status ${sale.sale_status}`}>
-                              {sale.sale_status}
-                            </span>
+                            <strong>{getCashierName(sale)}</strong>
                           </td>
-                          <td>{sale.user?.full_name || sale.cashier?.full_name || 'Unknown'}</td>
                           <td>
                             <div className="flex gap-1">
                               <button 
@@ -644,7 +632,7 @@ export default function AdminSales() {
                       ))}
                       {sales.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="text-center">
+                          <td colSpan={8} className="text-center">
                             <i className="fas fa-inbox" style={{ fontSize: '2rem', marginBottom: '8px' }}></i>
                             <p>No sales found</p>
                           </td>
@@ -738,44 +726,58 @@ export default function AdminSales() {
         </>
       )}
 
-      {/* Sale Detail Modal */}
+      {/* Sale Detail Modal - Updated and Stylish */}
       {showDetailModal && selectedSale && (
         <div className="modal-overlay">
           <div className="modal modal-large">
-            <div className="modal-header">
+            <div className="modal-header" style={{ background: 'linear-gradient(135deg, #1976D2 0%, #1565C0 100%)', color: 'white' }}>
               <h3 className="modal-title">
                 <i className="fas fa-receipt" style={{ marginRight: '8px' }}></i>
                 Sale Details
               </h3>
-              <button className="modal-close" onClick={() => setShowDetailModal(false)}>
+              <button className="modal-close" onClick={() => setShowDetailModal(false)} style={{ color: 'white' }}>
                 <i className="fas fa-times"></i>
               </button>
             </div>
             <div className="modal-body">
+              {/* Receipt Header */}
+              <div style={{ textAlign: 'center', marginBottom: '20px', padding: '16px', background: '#F8F9FA', borderRadius: '8px' }}>
+                <h4 style={{ margin: '0', color: '#1976D2' }}>DERAMMY AGROVET</h4>
+                <p style={{ margin: '4px 0', fontSize: '0.9rem', color: '#666' }}>P.O BOX 345, NANDI HILLS</p>
+                <p style={{ margin: '4px 0', fontSize: '0.9rem', color: '#666' }}>Tel: 0717149902, 0724985188</p>
+                <h3 style={{ margin: '12px 0 0 0', color: '#333' }}>SALES RECEIPT</h3>
+                <p style={{ margin: '4px 0', fontSize: '1.1rem', fontWeight: 'bold', color: '#1976D2' }}>
+                  {selectedSale.invoice_no}
+                </p>
+              </div>
+
+              {/* Sale Info Cards */}
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <p><strong>Receipt:</strong> {selectedSale.invoice_no}</p>
+                <div className="card" style={{ background: '#F8F9FA', border: '1px solid #E0E0E0' }}>
                   <p><strong>Date:</strong> {formatDateTime(selectedSale.sale_date)}</p>
-                  <p><strong>Customer:</strong> {selectedSale.customer?.name || 'Walk-in Customer'}</p>
+                  <p><strong>Customer:</strong> {selectedSale.customer?.name || selectedSale.customer_name || 'Walk-in Customer'}</p>
                   {selectedSale.customer?.phone && (
                     <p><strong>Phone:</strong> {selectedSale.customer.phone}</p>
                   )}
                 </div>
-                <div>
-                  <p><strong>Cashier:</strong> {selectedSale.user?.full_name || selectedSale.cashier?.full_name || 'N/A'}</p>
+                <div className="card" style={{ background: '#F8F9FA', border: '1px solid #E0E0E0' }}>
+                  <p><strong>Cashier:</strong> {getCashierName(selectedSale)}</p>
                   <p><strong>Payment Method:</strong> {selectedSale.payment_method.toUpperCase()}</p>
                   <p><strong>Payment Status:</strong> {selectedSale.payment_status}</p>
                   <p><strong>Sale Status:</strong> {selectedSale.sale_status}</p>
                 </div>
               </div>
 
-              <h4 className="mb-2">Items</h4>
+              {/* Items Table */}
+              <h4 className="mb-2" style={{ color: '#1976D2' }}>
+                <i className="fas fa-list" style={{ marginRight: '8px' }}></i>
+                Items
+              </h4>
               <div className="table-responsive">
                 <table className="table">
-                  <thead>
+                  <thead style={{ background: '#F5F5F5' }}>
                     <tr>
                       <th>Product</th>
-                      <th>SKU</th>
                       <th>Quantity</th>
                       <th>Unit Price</th>
                       <th>Total</th>
@@ -784,8 +786,7 @@ export default function AdminSales() {
                   <tbody>
                     {selectedSale.sale_items?.map((item) => (
                       <tr key={item.id}>
-                        <td>{item.product.name}</td>
-                        <td>{item.product.sku || '-'}</td>
+                        <td><strong>{item.product.name}</strong></td>
                         <td>{item.quantity} {item.product.unit}</td>
                         <td>{formatCurrency(Number(item.unit_price))}</td>
                         <td>{formatCurrency(Number(item.total))}</td>
@@ -795,19 +796,41 @@ export default function AdminSales() {
                 </table>
               </div>
 
-              <div className="pos-totals mt-4">
-                <p>Subtotal: <strong>{formatCurrency(Number(selectedSale.subtotal || selectedSale.total))}</strong></p>
+              {/* Totals */}
+              <div style={{ marginTop: '20px', padding: '16px', background: '#F8F9FA', borderRadius: '8px' }}>
+                <div className="flex justify-between mb-2">
+                  <span>Subtotal:</span>
+                  <strong>{formatCurrency(Number(selectedSale.subtotal || selectedSale.total))}</strong>
+                </div>
                 {selectedSale.tax > 0 && (
-                  <p>Tax: <strong>{formatCurrency(Number(selectedSale.tax))}</strong></p>
+                  <div className="flex justify-between mb-2">
+                    <span>VAT (16%):</span>
+                    <strong>{formatCurrency(Number(selectedSale.tax))}</strong>
+                  </div>
                 )}
                 {selectedSale.discount > 0 && (
-                  <p>Discount: <strong>-{formatCurrency(Number(selectedSale.discount))}</strong></p>
+                  <div className="flex justify-between mb-2">
+                    <span>Discount:</span>
+                    <strong style={{ color: '#D32F2F' }}>-{formatCurrency(Number(selectedSale.discount))}</strong>
+                  </div>
                 )}
-                <p className="pos-grand-total">
-                  TOTAL: <strong>{formatCurrency(Number(selectedSale.total))}</strong>
-                </p>
+                <div className="flex justify-between" style={{ borderTop: '2px solid #1976D2', paddingTop: '12px', marginTop: '8px' }}>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>TOTAL:</span>
+                  <strong style={{ fontSize: '1.2rem', color: '#1976D2' }}>
+                    {formatCurrency(Number(selectedSale.total))}
+                  </strong>
+                </div>
                 {selectedSale.amount_paid > 0 && (
-                  <p>Amount Paid: <strong>{formatCurrency(Number(selectedSale.amount_paid))}</strong></p>
+                  <div className="flex justify-between mt-2">
+                    <span>Amount Paid:</span>
+                    <strong style={{ color: '#4CAF50' }}>{formatCurrency(Number(selectedSale.amount_paid))}</strong>
+                  </div>
+                )}
+                {selectedSale.change_due > 0 && (
+                  <div className="flex justify-between mt-2">
+                    <span>Change Due:</span>
+                    <strong>{formatCurrency(Number(selectedSale.change_due))}</strong>
+                  </div>
                 )}
               </div>
             </div>
