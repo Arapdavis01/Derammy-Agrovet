@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Layout from '@/components/layout/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/router';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 
 interface Sale {
   id: string;
@@ -59,17 +60,17 @@ export default function AdminSales() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit] = useState(50);
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
   const [selectedSale, setSelectedSale] = useState<SaleDetail | null>(null);
   const [voiding, setVoiding] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'analytics'>('history');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showVoidModal, setShowVoidModal] = useState(false);
   const [voidReason, setVoidReason] = useState('');
-  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('all');
   
   const [filters, setFilters] = useState({
     search: '',
@@ -80,31 +81,22 @@ export default function AdminSales() {
     sale_status: '',
   });
 
-  useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-    if (user.role === 'cashier') {
-      router.push('/cashier/dashboard');
-      return;
-    }
-    fetchDashboard();
-    fetchSales(1);
-  }, [user, dateRange]);
+  const initialLoadDone = useRef(false);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async () => {
     try {
       const res = await api.get('/dashboard/admin');
       setDashboard(res.data);
     } catch (error) {
       console.error('Failed to load dashboard:', error);
-      toast.error('Failed to load dashboard summary');
     }
-  };
+  }, []);
 
-  const fetchSales = async (pageNum: number) => {
-    setLoading(true);
+  const fetchSales = useCallback(async (pageNum: number, isRefresh = false) => {
+    if (!isRefresh) {
+      setLoading(true);
+    }
+    
     try {
       const today = new Date().toISOString().split('T')[0];
       let startDate = today;
@@ -124,29 +116,69 @@ export default function AdminSales() {
       const params: any = {
         page: pageNum,
         limit,
-        search: filters.search || undefined,
         start_date: filters.start_date || startDate || undefined,
         end_date: filters.end_date || today || undefined,
         payment_method: filters.payment_method || undefined,
         payment_status: filters.payment_status || undefined,
         sale_status: filters.sale_status || undefined,
       };
+
+      // Only add search if provided
+      if (filters.search) {
+        params.search = filters.search;
+      }
+      
+      console.log('Fetching sales with params:', params);
       
       const res = await api.get('/sales', { params });
-      setSales(res.data.data || []);
-      setTotalCount(res.data.total || 0);
+      console.log('Sales response:', res.data);
+      
+      const salesData = res.data.data || res.data || [];
+      setSales(Array.isArray(salesData) ? salesData : []);
+      setTotalCount(res.data.total || salesData.length || 0);
       setPage(res.data.page || pageNum);
     } catch (error: any) {
       console.error('Failed to fetch sales:', error);
-      toast.error(error.response?.data?.error || 'Failed to fetch sales');
+      console.error('Error response:', error.response?.data);
+      
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        router.push('/login');
+      } else if (!isRefresh) {
+        toast.error(error.response?.data?.error || 'Failed to fetch sales');
+      }
     } finally {
-      setLoading(false);
+      if (!isRefresh) {
+        setLoading(false);
+        initialLoadDone.current = true;
+      }
     }
-  };
+  }, [dateRange, filters, limit, router]);
+
+  useEffect(() => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    if (user.role === 'cashier') {
+      router.push('/cashier/dashboard');
+      return;
+    }
+    fetchDashboard();
+    fetchSales(1, false);
+  }, [user, fetchDashboard, fetchSales]);
+
+  // Auto-refresh every 10 seconds
+  useRealtimeRefresh(() => {
+    if (initialLoadDone.current) {
+      fetchSales(page, true);
+      fetchDashboard();
+    }
+  }, 10000);
 
   const applyFilters = () => {
     setPage(1);
-    fetchSales(1);
+    fetchSales(1, false);
   };
 
   const clearFilters = () => {
@@ -158,9 +190,9 @@ export default function AdminSales() {
       payment_status: '',
       sale_status: '',
     });
-    setDateRange('today');
+    setDateRange('all');
     setPage(1);
-    fetchSales(1);
+    fetchSales(1, false);
   };
 
   const fetchSaleDetail = async (id: string) => {
@@ -194,7 +226,7 @@ export default function AdminSales() {
       setShowVoidModal(false);
       setShowDetailModal(false);
       setSelectedSale(null);
-      fetchSales(page);
+      fetchSales(page, false);
       fetchDashboard();
     } catch (error: any) {
       console.error('Failed to void sale:', error);
@@ -205,11 +237,9 @@ export default function AdminSales() {
   };
 
   const getCashierName = (sale: Sale): string => {
-    // Try to get cashier name from cashier object first
     if (sale.cashier?.full_name) {
       return sale.cashier.full_name;
     }
-    // Fall back to user name if available
     if (sale.user?.full_name) {
       return sale.user.full_name;
     }
@@ -354,7 +384,7 @@ export default function AdminSales() {
           <p className="text-muted">Monitor sales performance, track transactions, and manage revenue</p>
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-outline btn-sm" onClick={() => { fetchSales(page); fetchDashboard(); }} title="Refresh">
+          <button className="btn btn-outline btn-sm" onClick={() => { fetchSales(page, false); fetchDashboard(); }} title="Refresh">
             <i className="fas fa-refresh" style={{ marginRight: '4px' }}></i> Refresh
           </button>
           <button className="btn btn-outline btn-sm" onClick={exportCSV} title="Export CSV">
@@ -649,7 +679,7 @@ export default function AdminSales() {
                   <button 
                     className="btn btn-outline btn-sm" 
                     disabled={page <= 1} 
-                    onClick={() => fetchSales(page - 1)}
+                    onClick={() => fetchSales(page - 1, false)}
                   >
                     <i className="fas fa-chevron-left" style={{ marginRight: '4px' }}></i> Previous
                   </button>
@@ -659,7 +689,7 @@ export default function AdminSales() {
                   <button 
                     className="btn btn-outline btn-sm" 
                     disabled={page >= totalPages} 
-                    onClick={() => fetchSales(page + 1)}
+                    onClick={() => fetchSales(page + 1, false)}
                   >
                     Next <i className="fas fa-chevron-right" style={{ marginLeft: '4px' }}></i>
                   </button>
@@ -673,7 +703,6 @@ export default function AdminSales() {
       {activeTab === 'analytics' && (
         <>
           <div className="grid grid-cols-2 gap-4">
-            {/* Payment Methods Breakdown */}
             <div className="card">
               <h3 className="card-title mb-4">
                 <i className="fas fa-chart-pie" style={{ marginRight: '8px', color: '#F57C00' }}></i>
@@ -698,7 +727,6 @@ export default function AdminSales() {
               )}
             </div>
 
-            {/* Cashier Performance */}
             <div className="card">
               <h3 className="card-title mb-4">
                 <i className="fas fa-users" style={{ marginRight: '8px', color: '#0288D1' }}></i>
@@ -726,7 +754,7 @@ export default function AdminSales() {
         </>
       )}
 
-      {/* Sale Detail Modal - Updated and Stylish */}
+      {/* Sale Detail Modal */}
       {showDetailModal && selectedSale && (
         <div className="modal-overlay">
           <div className="modal modal-large">
@@ -740,7 +768,6 @@ export default function AdminSales() {
               </button>
             </div>
             <div className="modal-body">
-              {/* Receipt Header */}
               <div style={{ textAlign: 'center', marginBottom: '20px', padding: '16px', background: '#F8F9FA', borderRadius: '8px' }}>
                 <h4 style={{ margin: '0', color: '#1976D2' }}>DERAMMY AGROVET</h4>
                 <p style={{ margin: '4px 0', fontSize: '0.9rem', color: '#666' }}>P.O BOX 345, NANDI HILLS</p>
@@ -751,7 +778,6 @@ export default function AdminSales() {
                 </p>
               </div>
 
-              {/* Sale Info Cards */}
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="card" style={{ background: '#F8F9FA', border: '1px solid #E0E0E0' }}>
                   <p><strong>Date:</strong> {formatDateTime(selectedSale.sale_date)}</p>
@@ -768,7 +794,6 @@ export default function AdminSales() {
                 </div>
               </div>
 
-              {/* Items Table */}
               <h4 className="mb-2" style={{ color: '#1976D2' }}>
                 <i className="fas fa-list" style={{ marginRight: '8px' }}></i>
                 Items
@@ -796,7 +821,6 @@ export default function AdminSales() {
                 </table>
               </div>
 
-              {/* Totals */}
               <div style={{ marginTop: '20px', padding: '16px', background: '#F8F9FA', borderRadius: '8px' }}>
                 <div className="flex justify-between mb-2">
                   <span>Subtotal:</span>
