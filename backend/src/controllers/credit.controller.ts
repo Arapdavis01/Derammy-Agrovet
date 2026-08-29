@@ -10,7 +10,10 @@ export const listCreditCustomers = async (req: Request, res: Response) => {
     .order('name')
     .not('credit_balance', 'eq', 0);
 
-  if (error) throw new AppError('Failed to fetch credit customers', 500);
+  if (error) {
+    console.error('Failed to fetch credit customers:', error);
+    throw new AppError('Failed to fetch credit customers', 500);
+  }
   res.json(data);
 };
 
@@ -83,6 +86,16 @@ export const recordPayment = async (req: Request, res: Response) => {
   
   const userId = (req as any).user.id;
 
+  console.log('Recording payment with data:', {
+    customer_id,
+    amount,
+    payment_method,
+    reference,
+    cashier_id,
+    received_by,
+    userId
+  });
+
   if (!customer_id || !amount || amount <= 0) {
     throw new AppError('Customer and positive amount are required', 400);
   }
@@ -94,39 +107,54 @@ export const recordPayment = async (req: Request, res: Response) => {
     .eq('id', customer_id)
     .single();
 
-  if (fetchError || !customer) throw new AppError('Customer not found', 404);
+  if (fetchError || !customer) {
+    console.error('Customer fetch error:', fetchError);
+    throw new AppError('Customer not found', 404);
+  }
 
   const currentBalance = Number(customer.credit_balance || 0);
-  if (currentBalance <= 0) throw new AppError('Customer has no outstanding balance', 400);
+  console.log('Current balance:', currentBalance);
+
+  if (currentBalance <= 0) {
+    throw new AppError('Customer has no outstanding balance', 400);
+  }
 
   const paymentAmount = Math.min(currentBalance, Number(amount));
   const newBalance = currentBalance - paymentAmount;
 
-  // Prepare payment record
+  console.log('Payment amount:', paymentAmount);
+  console.log('New balance:', newBalance);
+
+  // First, update customer balance
+  const { error: updateError } = await supabaseAdmin
+    .from('customers')
+    .update({ credit_balance: newBalance })
+    .eq('id', customer_id);
+
+  if (updateError) {
+    console.error('Failed to update customer balance:', updateError);
+    throw new AppError('Failed to update customer balance', 500);
+  }
+
+  // Prepare payment record - try with all fields first
   const paymentRecord: any = {
     customer_id,
     amount: paymentAmount,
     payment_method,
-    reference: reference || null,
     user_id: userId,
-    sale_id: null, // indicate general payment
-    payment_date: payment_date || new Date().toISOString(),
-    notes: notes || `Payment recorded by cashier`,
+    sale_id: null,
   };
 
-  // Add cashier_id if provided
-  if (cashier_id) {
-    paymentRecord.cashier_id = cashier_id;
-  }
-  
-  // Add received_by if provided (alternative field name)
-  if (received_by) {
-    paymentRecord.received_by = received_by;
-  }
+  // Only add optional fields if they have values
+  if (reference) paymentRecord.reference = reference;
+  if (cashier_id) paymentRecord.cashier_id = cashier_id;
+  if (received_by) paymentRecord.received_by = received_by;
+  if (payment_date) paymentRecord.payment_date = payment_date;
+  if (notes) paymentRecord.notes = notes;
 
   console.log('Attempting to insert payment record:', paymentRecord);
 
-  // Start a transaction by using a temporary record
+  // Try to insert payment
   const { data: payment, error: paymentError } = await supabaseAdmin
     .from('payments')
     .insert(paymentRecord)
@@ -137,7 +165,13 @@ export const recordPayment = async (req: Request, res: Response) => {
     console.error('Payment insert error:', paymentError);
     console.error('Error details:', JSON.stringify(paymentError, null, 2));
     
-    // Try with minimal fields if the full insert fails
+    // Rollback balance update
+    await supabaseAdmin
+      .from('customers')
+      .update({ credit_balance: currentBalance })
+      .eq('id', customer_id);
+    
+    // Try with minimal fields
     console.log('Attempting minimal insert...');
     const minimalRecord = {
       customer_id,
@@ -155,19 +189,25 @@ export const recordPayment = async (req: Request, res: Response) => {
     
     if (minimalError) {
       console.error('Minimal insert also failed:', minimalError);
-      // Rollback balance
-      await supabaseAdmin.from('customers').update({ credit_balance: currentBalance }).eq('id', customer_id);
-      throw new AppError('Failed to record payment. Please check database schema.', 500);
+      console.error('Minimal error details:', JSON.stringify(minimalError, null, 2));
+      
+      // Rollback balance update
+      await supabaseAdmin
+        .from('customers')
+        .update({ credit_balance: currentBalance })
+        .eq('id', customer_id);
+      
+      throw new AppError('Failed to record payment. Database schema issue. Please run migration.', 500);
     }
     
-    // Update customer balance
-    const { error: updateError } = await supabaseAdmin
+    // Update customer balance again (since we rolled back)
+    const { error: finalUpdateError } = await supabaseAdmin
       .from('customers')
       .update({ credit_balance: newBalance })
       .eq('id', customer_id);
 
-    if (updateError) {
-      console.error('Balance update error:', updateError);
+    if (finalUpdateError) {
+      console.error('Final balance update error:', finalUpdateError);
       throw new AppError('Failed to update customer balance', 500);
     }
 
@@ -178,19 +218,6 @@ export const recordPayment = async (req: Request, res: Response) => {
       warning: 'Payment recorded with minimal fields due to schema mismatch'
     });
     return;
-  }
-
-  // Update customer balance
-  const { error: updateError } = await supabaseAdmin
-    .from('customers')
-    .update({ credit_balance: newBalance })
-    .eq('id', customer_id);
-
-  if (updateError) {
-    console.error('Balance update error:', updateError);
-    // Rollback payment
-    await supabaseAdmin.from('payments').delete().eq('id', payment.id);
-    throw new AppError('Failed to update customer balance', 500);
   }
 
   console.log('Payment recorded successfully:', payment);
@@ -205,7 +232,10 @@ export const getOutstandingCredit = async (req: Request, res: Response) => {
     .gt('credit_balance', 0)
     .order('credit_balance', { ascending: false });
 
-  if (error) throw new AppError('Failed to fetch outstanding credit', 500);
+  if (error) {
+    console.error('Failed to fetch outstanding credit:', error);
+    throw new AppError('Failed to fetch outstanding credit', 500);
+  }
   res.json(data);
 };
 
@@ -267,8 +297,7 @@ export const listPayments = async (req: Request, res: Response) => {
       reference,
       payment_date,
       customer:customers(id, name),
-      user:users(id, full_name),
-      cashier:users!payments_cashier_id_fkey(id, full_name)
+      user:users(id, full_name)
     `)
     .order('payment_date', { ascending: false })
     .range(offsetNum, offsetNum + limitNum - 1);
