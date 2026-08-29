@@ -43,10 +43,16 @@ export default function CashierCredit() {
     setLoading(true);
     try {
       const res = await api.get('/credit/outstanding');
-      setCustomers(res.data || []);
+      console.log('Outstanding credit response:', res.data);
+      setCustomers(Array.isArray(res.data) ? res.data : (res.data.data || []));
     } catch (error: any) {
       console.error('Failed to fetch outstanding credit:', error);
-      toast.error('Failed to fetch outstanding credit. Please try again.');
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        router.push('/login');
+      } else {
+        toast.error('Failed to fetch outstanding credit. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -55,7 +61,8 @@ export default function CashierCredit() {
   const fetchCashiers = async () => {
     try {
       const res = await api.get('/cashiers/active');
-      setCashiers(res.data || []);
+      console.log('Cashiers response:', res.data);
+      setCashiers(Array.isArray(res.data) ? res.data : (res.data.data || []));
     } catch (error) {
       console.error('Failed to fetch cashiers:', error);
       // Silently fail for cashiers - not critical
@@ -77,7 +84,7 @@ export default function CashierCredit() {
       toast.error('Enter a valid amount');
       return;
     }
-    if (parseFloat(paymentAmount) > selectedCustomer.credit_balance) {
+    if (parseFloat(paymentAmount) > Number(selectedCustomer.credit_balance)) {
       toast.error('Payment amount cannot exceed credit balance');
       return;
     }
@@ -101,17 +108,42 @@ export default function CashierCredit() {
 
     setSubmitting(true);
     try {
-      await api.post('/credit/payments', {
-        ...pendingPaymentData,
+      // Try different payload structures to match backend expectations
+      const payload = {
+        customer_id: pendingPaymentData.customer_id,
+        amount: pendingPaymentData.amount,
+        payment_method: pendingPaymentData.payment_method,
+        reference: pendingPaymentData.reference,
         cashier_id: selectedCashierId,
-      });
+        received_by: selectedCashierId, // Alternative field name
+        payment_date: new Date().toISOString(),
+        notes: `Payment recorded by cashier`,
+      };
+
+      console.log('Sending payment payload:', payload);
+
+      const res = await api.post('/credit/payments', payload);
+      
+      console.log('Payment response:', res.data);
+      
       toast.success('Payment recorded successfully');
       setShowCashierModal(false);
       setPendingPaymentData(null);
       fetchOutstanding();
     } catch (error: any) {
       console.error('Failed to record payment:', error);
-      toast.error(error.response?.data?.error || 'Failed to record payment');
+      console.error('Error response:', error.response?.data);
+      
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        router.push('/login');
+      } else if (error.response?.status === 400) {
+        toast.error(error.response?.data?.error || 'Invalid payment data');
+      } else if (error.response?.status === 404) {
+        toast.error('Payment endpoint not found. Please contact support.');
+      } else {
+        toast.error(error.response?.data?.error || error.response?.data?.message || 'Failed to record payment');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -122,6 +154,7 @@ export default function CashierCredit() {
       style: 'currency',
       currency: 'KES',
       minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   };
 
@@ -337,6 +370,9 @@ export default function CashierCredit() {
                   <p><strong>Customer:</strong> {selectedCustomer?.name}</p>
                   <p><strong>Amount:</strong> {formatCurrency(pendingPaymentData.amount)}</p>
                   <p><strong>Method:</strong> {pendingPaymentData.payment_method.toUpperCase()}</p>
+                  {pendingPaymentData.reference && (
+                    <p><strong>Reference:</strong> {pendingPaymentData.reference}</p>
+                  )}
                 </div>
               )}
               <div className="form-group">
